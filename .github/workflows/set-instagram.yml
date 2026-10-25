@@ -1,0 +1,54 @@
+name: Set Instagram followers by hand
+
+# Use this until the automatic Instagram connection is set up.
+# GitHub > Actions > "Set Instagram followers by hand" > Run workflow > type the number.
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'Your current Instagram follower count (a whole number)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-followers
+  cancel-in-progress: false
+
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Write the number into live.json
+        env:
+          COUNT: ${{ inputs.count }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const n = Number(process.env.COUNT);
+            if (!Number.isInteger(n) || n < 0 || n > 100000000) { console.error('Please enter a whole number.'); process.exit(1); }
+            const live = JSON.parse(fs.readFileSync('live.json', 'utf8').replace(/^﻿/, ''));
+            live.instagram = n;
+            live.total = n + (live.youtube || 0);
+            live.updated = new Date().toISOString();
+            fs.writeFileSync('live.json', JSON.stringify(live, null, 2) + '\n');
+            console.log('Instagram set to ' + n + ', total ' + live.total);
+          "
+      - name: Commit live.json if it changed
+        run: |
+          if git diff --quiet -- live.json; then
+            echo "No change."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add live.json
+            git commit -m "Set Instagram followers by hand"
+            git push
+          fi
