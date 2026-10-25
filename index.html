@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05070f">
+<title>Neverend City</title>
+<style>
+  :root { --fg:#f4f7ff; --dim:rgba(235,242,255,.64); --glass:rgba(10,14,26,.46); --line:rgba(255,255,255,.16); --ig:#ff4fb8; --yt:#ff3b3b; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:#05070f; overflow:hidden; color:var(--fg); font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; outline:none; }
+  #hud { position:fixed; inset:0; pointer-events:none; padding:max(16px,env(safe-area-inset-top)) 14px max(16px,env(safe-area-inset-bottom)); display:flex; flex-direction:column; justify-content:space-between; align-items:center; }
+  #top { text-align:center; text-shadow:0 2px 24px rgba(0,0,0,.55); width:100%; max-width:560px; }
+  #title { font-size:clamp(11px,2.9vw,14px); letter-spacing:.42em; text-transform:uppercase; color:var(--dim); font-weight:500; padding-left:.42em; }
+  #count { font-size:clamp(52px,16vw,136px); line-height:1; font-weight:200; letter-spacing:-.02em; font-variant-numeric:tabular-nums; margin-top:4px; }
+  #chips { display:flex; gap:14px; justify-content:center; margin-top:8px; font-size:clamp(12px,3.2vw,15px); font-variant-numeric:tabular-nums; }
+  .chip { display:flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; background:var(--glass); border:1px solid var(--line); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+  .dot { width:9px; height:9px; border-radius:50%; } .dot.ig { background:var(--ig); box-shadow:0 0 10px var(--ig); } .dot.yt { background:var(--yt); box-shadow:0 0 10px var(--yt); }
+  #prog { margin:12px auto 0; width:min(420px,86vw); }
+  #bar { height:5px; border-radius:99px; background:rgba(255,255,255,.14); overflow:hidden; }
+  #fill { height:100%; width:0; border-radius:99px; background:linear-gradient(90deg,#78d6ff,#b69bff); transition:width .6s; }
+  #next { margin-top:7px; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); }
+  #toast { min-height:20px; margin-top:8px; font-size:14px; letter-spacing:.12em; color:#9fe2ff; opacity:0; transition:opacity .5s; }
+  #toast.on { opacity:1; }
+  #bottom { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; pointer-events:auto; }
+  .pill { display:flex; gap:4px; padding:4px; border-radius:999px; background:var(--glass); border:1px solid var(--line); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  .pill button { appearance:none; border:0; background:transparent; color:var(--dim); font:inherit; font-size:12px; letter-spacing:.1em; text-transform:uppercase; padding:10px 14px; border-radius:999px; cursor:pointer; }
+  .pill button.on { background:rgba(255,255,255,.16); color:var(--fg); }
+  #dev { position:fixed; left:12px; top:12px; width:min(300px,calc(100vw - 24px)); padding:10px 12px; border-radius:12px; background:var(--glass); border:1px solid var(--line); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); font-size:12px; letter-spacing:.06em; display:none; pointer-events:auto; }
+  #dev b { color:var(--dim); font-weight:500; letter-spacing:.2em; text-transform:uppercase; font-size:10px; }
+  #dev input[type=range] { width:100%; margin:8px 0 4px; } #dev input[type=number] { width:100%; background:rgba(0,0,0,.35); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 8px; font:inherit; }
+  #newest { position:fixed; left:0; top:0; transform:translate(-50%,-100%); pointer-events:none; opacity:0; transition:opacity .4s; text-align:center; font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:#d8f3ff; text-shadow:0 0 12px rgba(120,210,255,.9); white-space:nowrap; }
+  #newest::after { content:""; display:block; width:1px; height:26px; margin:6px auto 0; background:linear-gradient(#9fe2ff,transparent); }
+  #loading { position:fixed; inset:0; display:grid; place-items:center; background:#05070f; color:var(--dim); letter-spacing:.4em; font-size:12px; text-transform:uppercase; transition:opacity 1.2s; }
+  #loading.done { opacity:0; pointer-events:none; }
+  #err { position:fixed; left:16px; right:16px; bottom:90px; color:#ffb4a8; font-size:13px; text-align:center; display:none; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<div id="newest">Newest building</div>
+<div id="hud">
+  <div id="top">
+    <div id="title">Neverend City</div>
+    <div id="count">0</div>
+    <div id="chips">
+      <div class="chip"><span class="dot ig"></span><span>Instagram <b id="igc">0</b></span></div>
+      <div class="chip"><span class="dot yt"></span><span>YouTube <b id="ytc">0</b></span></div>
+    </div>
+    <div id="prog"><div id="bar"><div id="fill"></div></div><div id="next"></div></div>
+    <div id="toast"></div>
+  </div>
+  <div id="bottom">
+    <div class="pill" id="tod" role="group" aria-label="Time of day">
+      <button data-mode="auto" class="on">Auto</button><button data-mode="day">Day</button><button data-mode="night">Night</button>
+    </div>
+    <div class="pill">
+      <button id="plat" aria-pressed="false">Show by platform</button>
+      <button id="fly">Fly to newest</button>
+    </div>
+  </div>
+</div>
+<div id="dev"><b>Test slider (dev only)</b><input id="devr" type="range" min="0" max="1000" value="0"><input id="devn" type="number" min="0" max="100000" step="1"></div>
+<div id="loading">Building city</div>
+<div id="err"></div>
+<script type="module" src="main.js"></script>
+</body>
+</html>
