@@ -707,13 +707,14 @@ const visibleChain = o => { for (; o; o = o.parent) if (!o.visible) return false
 canvas.addEventListener('pointerdown', e => { pdown = [e.clientX, e.clientY, performance.now()]; });
 canvas.addEventListener('pointerup', e => {
   const d = pdown; pdown = null;
-  if (!demo || !W || interior.active || entering || !d || Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 5 || performance.now() - d[2] > 350) return;
+  if (!visitorOn || !W || interior.active || entering || !d || Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 5 || performance.now() - d[2] > 350) return;
   const r = canvas.getBoundingClientRect(); pickNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); pickRay.setFromCamera(pickNdc, camera);
   if (goldenGroup) { const gh = pickRay.intersectObjects(goldenGroup.children, false)[0]; if (gh && gh.object.userData.golden !== undefined) { const gi = gh.object.userData.golden, gs = W.S[gi]; visitor.findGolden(gi).then(ok => { if (ok) { fw.queue.push({ t: performance.now() / 1000, x: gs.x, y: gs.model.topY + 12, z: gs.z, c: '#ffd23a' }); refreshGolden(); } }); return; } }
   const meshes = []; world.traverse(o => { if (o.isInstancedMesh && o.userData.items && visibleChain(o)) meshes.push(o); });
   const hit = pickRay.intersectObjects(meshes, false)[0]; if (!hit) return;
   const s = hit.object.userData.items[hit.instanceId]; if (!s) return;
   if (visitor.pickMode) { if (visitor.claimedSet.has(s.i)) { toast('That building is already claimed. Pick another.'); return; } visitor.pickMode = false; visitor.pending = s; visitor.open('building'); return; }
+  if (!demo) return;
   if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
 });
 if (demo) setTimeout(() => toast('Demo: click a house or shop to go inside'), 4000);
