@@ -5,6 +5,7 @@
 import { POINTS, dayIndex, dailyReward, nextStreak, pointsMultiplier, levelOf, nextLevel, LEVELS, goldenForDay, CRATE_ODDS, COSMETICS, openCrate, cratesForStreak, canBuy, nameOk, makeCode, DAY, VOTE_OPTIONS } from './points.js';
 import { visitorDefault } from './store.js';
 import * as G from './gameui.js';
+import { STRIPE_LINKS } from './config.js';
 
 export { VOTE_OPTIONS };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -164,7 +165,7 @@ ${mode === 'create' ? '<label style="display:flex;gap:8px;align-items:center"><i
 
   render() {
     if (this.remote && !this.remote.signedIn) { this.renderSignIn(); return; }
-    const TABS = [['quests', 'Quests'], ['building', 'My building'], ['style', 'Style'], ['crates', 'Crates'], ['leaders', 'Leaders'], ['more', 'More']];
+    const TABS = [['quests', 'Quests'], ['building', 'My building'], ['style', 'Style'], ['crates', 'Crates'], ['leaders', 'Leaders'], ['support', 'Support'], ['more', 'More']];
     this.tabsEl.innerHTML = TABS.map(([id, n]) => `<button data-t="${id}" class="${this.tab === id ? 'on' : ''}">${n}</button>`).join(''); this.tabsEl.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { this.tab = b.dataset.t; this.render(); }));
     const el = this.body, v = this.v, lv = this.level, nl = nextLevel(v.points), cur = LEVELS.find(l => l.level === lv); const bind = (sel, fn) => el.querySelectorAll(sel).forEach(e => e.addEventListener('click', () => fn(e)));
     const { W, count, next } = this.getCtx(), today = dayIndex(Date.now()), checked = v.lastDay === today;
@@ -226,6 +227,14 @@ ${c.status === 'verified' ? '<div class="q done"><div class="qi">✅</div><div c
       el.innerHTML = '<div class="dim">Loading…</div>'; const medals = ['🥇', '🥈', '🥉'];
       const draw = b => { const tbl = (title, rows, k, unit) => `<div class="dim" style="margin-top:6px">${title}</div>${rows.length ? rows.slice(0, 10).map((r, i) => `<div class="rank">${medals[i] || '#' + (i + 1)} <span>${esc(r.name)}</span><b style="margin-left:auto">${fmt(r[k])}${unit}</b></div>`).join('') : '<div class="dim">Nobody yet. Be the first!</div>'}`; if (this.tab === 'leaders') el.innerHTML = tbl('Top stars', b.points, 'points', ' ★') + tbl('Longest streaks', b.streaks, 'streak', ' 🔥') + tbl('Most invites', b.referrals, 'referrals', ' 🤝'); };
       if (this.remote) this.run(async () => draw(await this.remote.boards())); else draw({ points: [{ name: this.name, points: v.points }], streaks: [{ name: this.name, streak: v.bestStreak }], referrals: [] });
+    }
+
+    if (this.tab === 'support') {
+      const q = (this.remote && this.remote.s ? `?client_reference_id=${encodeURIComponent(this.remote.s.uid)}&prefilled_email=${encodeURIComponent(this.remote.email)}` : ''), tag = STRIPE_LINKS.test ? '<span class="gpill" style="align-self:flex-start">TEST MODE: no real money</span>' : '';
+      el.innerHTML = `${tag}<div class="sc"><div style="font:400 20px var(--game-font)">💛 Support Neverend City</div><div class="dim">Supporting is optional and only for looks and thanks. It never changes follower counts, levels or leaderboards, and nothing here is a random reward.</div></div>
+<div class="q"><div class="qi">🏅</div><div class="qb"><div class="qt">Supporter pack · $5</div><div class="dim">Supporter badge and your name on the wall.</div></div><a class="gbtn gold" href="${STRIPE_LINKS.supporter}${q}" target="_blank" rel="noopener" style="text-decoration:none;color:#fff">Support</a></div>
+<div class="q"><div class="qi">☕</div><div class="qb"><div class="qt">Leave a tip</div><div class="dim">Pick your own amount, from $1.</div></div><a class="gbtn pink" href="${STRIPE_LINKS.tip}${q}" target="_blank" rel="noopener" style="text-decoration:none;color:#fff">Tip</a></div>
+<div class="dim">Payments are handled by Stripe. We never see your card. ${STRIPE_LINKS.test ? 'Test card: 4242 4242 4242 4242, any future date, any CVC.' : ''}</div>`;
     }
 
     if (this.tab === 'more') {
