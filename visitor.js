@@ -25,7 +25,7 @@ export class Visitor {
   /* ----- start-up ----- */
   async start() {
     if (!this.remote) { this.dailyVisit(); return; }
-    await this.run(async () => { await this.remote.init(); if (this.remote.lastError) this.notify('Sign-in link problem: ' + this.remote.lastError); await this.loadPublic(); if (this.remote.signedIn) await this.afterSignIn(); this.refreshBadge(); });
+    await this.run(async () => { await this.remote.init(); if (this.remote.recovery) { this.open('profile'); } if (this.remote.lastError) this.notify('Sign-in link problem: ' + this.remote.lastError); await this.loadPublic(); if (this.remote.signedIn) await this.afterSignIn(); this.refreshBadge(); });
     setInterval(() => this.run(async () => { await this.loadPublic(); if (this.remote.signedIn) await this.sync(); this.applyFx(); }), 60000);
   }
   async afterSignIn() {
@@ -101,7 +101,7 @@ export class Visitor {
 #vhub .tabs{display:flex;gap:4px;padding:8px 10px;overflow-x:auto;border-bottom:1px solid rgba(255,255,255,.1)}#vhub .tabs button.on{background:#2f6aa8;border-color:#5b95d6}
 #vhub .body{padding:14px;overflow:auto;display:flex;flex-direction:column;gap:9px;font-size:13px;line-height:1.5}
 #vhub button{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:inherit;font:inherit;font-size:13px;padding:8px 12px;border-radius:9px;cursor:pointer;white-space:nowrap}#vhub button:hover{background:rgba(255,255,255,.16)}#vhub button:disabled{opacity:.4;cursor:not-allowed}#vhub button.pri{background:#2f6aa8;border-color:#5b95d6}
-#vhub input[type=text],#vhub input[type=email],#vhub input[type=date],#vhub select{width:100%;padding:9px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.35);color:inherit;font:inherit}
+#vhub input[type=text],#vhub input[type=email],#vhub input[type=password],#vhub input[type=date],#vhub select{width:100%;padding:9px;border-radius:9px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.35);color:inherit;font:inherit}
 #vhub .row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.06)}#vhub .dim{opacity:.65;font-size:12px}
 #vhub .pill{padding:2px 8px;border-radius:99px;font-size:11px;border:1px solid currentColor}#vhub .banner{padding:9px 11px;border-radius:10px;background:rgba(255,200,60,.12);border:1px solid rgba(255,200,60,.4)}`;
     document.head.appendChild(css);
@@ -113,12 +113,32 @@ export class Visitor {
   open(tab) { if (tab) this.tab = tab; this.root.style.display = 'block'; this.render(); if (this.remote && this.remote.signedIn) this.run(async () => { await this.sync(); await this.loadPublic(); if (this.root.style.display === 'block') this.render(); }); }
   close() { this.root.style.display = 'none'; }
   renderSignIn() {
-    this.tabsEl.innerHTML = ''; const el = this.body;
-    el.innerHTML = `<div class="banner">Sign in to earn points, claim a building, find golden stars and open crates.</div><div class="dim">No password: we email you a one-time link. You must be 13 or older. Your email is never shown to anyone.</div><input type="email" id="semail" placeholder="you@example.com" autocomplete="email"><label><input type="checkbox" id="sage"> I am 13 or older</label><button class="pri" id="ssend">Email me a sign-in link</button><div id="smsg" class="dim"></div><a href="privacy.html" target="_blank" style="color:#8fc4ff">Privacy (draft)</a>`;
-    el.querySelector('#ssend').addEventListener('click', async () => { const em = el.querySelector('#semail').value.trim(), msg = el.querySelector('#smsg'); if (!/^\S+@\S+\.\S+$/.test(em)) { msg.textContent = 'Enter a valid email.'; return; } if (!el.querySelector('#sage').checked) { msg.textContent = 'Please confirm you are 13 or older.'; return; }
-      msg.textContent = 'Sending…'; try { await this.remote.signInEmail(em); msg.textContent = 'Check your email and click the link. Then you will land back here, signed in.'; } catch (e) { msg.textContent = e.message; } });
-  }
-  render() {
+    this.tabsEl.innerHTML = ''; const el = this.body, mode = this.authMode || 'create';
+    if (this.remote.recovery) {
+      el.innerHTML = `<div class="banner">Choose a new password</div><input type="password" id="np" placeholder="New password (8+ characters)" autocomplete="new-password"><button class="pri" id="npgo">Save new password</button><div id="smsg" class="dim"></div>`;
+      el.querySelector('#npgo').addEventListener('click', async () => { const msg = el.querySelector('#smsg'), pw = el.querySelector('#np').value; if (pw.length < 8) { msg.textContent = 'Use at least 8 characters.'; return; } try { await this.remote.updatePassword(pw); this.remote.recovery = false; this.notify('Password saved. You are signed in.'); await this.afterSignIn(); this.render(); } catch (e) { msg.textContent = e.message; } });
+      return;
+    }
+    el.innerHTML = `<div class="banner">Claim your building</div><div class="dim">Join to earn points, claim a building, find golden stars and open crates. Free, and no email to wait for.</div>
+<div style="display:flex;gap:6px"><button data-m="create" class="${mode === 'create' ? 'pri' : ''}" style="flex:1">Create account</button><button data-m="login" class="${mode === 'login' ? 'pri' : ''}" style="flex:1">Log in</button></div>
+<input type="email" id="semail" placeholder="Email" autocomplete="email"><input type="password" id="spass" placeholder="Password (8+ characters)" autocomplete="${mode === 'create' ? 'new-password' : 'current-password'}">
+${mode === 'create' ? '<label><input type="checkbox" id="sage"> I am 13 or older</label>' : ''}<button class="pri" id="sgo">${mode === 'create' ? 'Create account' : 'Log in'}</button><div id="smsg" class="dim"></div>
+<div class="dim">Your email is only used for your account and is never shown to anyone. ${mode === 'login' ? 'Forgot your password? <a href="#" id="sforgot" style="color:#8fc4ff">Send me a reset link</a>' : ''}</div><a href="privacy.html" target="_blank" style="color:#8fc4ff">Privacy (draft)</a>`;
+    el.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', () => { this.authMode = b.dataset.m; this.renderSignIn(); }));
+    const msg = el.querySelector('#smsg'), go = el.querySelector('#sgo');
+    go.addEventListener('click', async () => {
+      const em = el.querySelector('#semail').value.trim(), pw = el.querySelector('#spass').value;
+      if (!/^\S+@\S+\.\S+$/.test(em)) { msg.textContent = 'Enter a valid email.'; return; } if (pw.length < 8) { msg.textContent = 'Use a password with at least 8 characters.'; return; }
+      if (mode === 'create' && !el.querySelector('#sage').checked) { msg.textContent = 'Please confirm you are 13 or older.'; return; }
+      go.disabled = true; msg.textContent = 'One moment…';
+      try {
+        if (mode === 'create') { const r = await this.remote.signUp(em, pw); if (!r.signedIn) { msg.textContent = 'Almost done: check your email and click the confirmation link.'; go.disabled = false; return; } }
+        else await this.remote.signInPassword(em, pw);
+        await this.afterSignIn(); this.render();
+      } catch (e) { msg.textContent = e.message; go.disabled = false; }
+    });
+    const fg = el.querySelector('#sforgot'); if (fg) fg.addEventListener('click', async e => { e.preventDefault(); const em = el.querySelector('#semail').value.trim(); if (!/^\S+@\S+\.\S+$/.test(em)) { msg.textContent = 'Type your email above first.'; return; } try { await this.remote.resetPassword(em); msg.textContent = 'If that email has an account, a reset link is on its way.'; } catch (err) { msg.textContent = err.message; } });
+  }  render() {
     if (this.remote && !this.remote.signedIn) { this.renderSignIn(); return; }
     const TABS = [['profile', 'Profile'], ['claim', 'My building'], ['wardrobe', 'Wardrobe'], ['crates', 'Crates'], ['hunt', 'Treasure hunt'], ['vote', 'Vote'], ['predict', 'Predict'], ['boards', 'Boards'], ['privacy', 'Privacy']];
     this.tabsEl.innerHTML = TABS.map(([id, n]) => `<button data-t="${id}" class="${this.tab === id ? 'on' : ''}">${n}</button>`).join(''); this.tabsEl.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { this.tab = b.dataset.t; this.render(); }));

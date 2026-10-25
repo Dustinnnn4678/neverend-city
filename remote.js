@@ -18,7 +18,7 @@ export class Remote {
   async init() {
     const h = location.hash.replace(/^#/, '');
     if (h.includes('access_token=')) {
-      const p = new URLSearchParams(h), at = p.get('access_token'); if (at) { const c = b64json(at.split('.')[1] || ''); this.s = { access_token: at, refresh_token: p.get('refresh_token'), exp: c.exp || 0, email: c.email || '', uid: c.sub }; this._save(); }
+      const p = new URLSearchParams(h), at = p.get('access_token'); if (p.get('type') === 'recovery') this.recovery = true; if (at) { const c = b64json(at.split('.')[1] || ''); this.s = { access_token: at, refresh_token: p.get('refresh_token'), exp: c.exp || 0, email: c.email || '', uid: c.sub }; this._save(); }
       history.replaceState(null, '', location.pathname + location.search);
     } else if (h.includes('error_description=')) { history.replaceState(null, '', location.pathname + location.search); this.lastError = new URLSearchParams(h).get('error_description'); }
     if (this.s && this.s.exp && this.s.exp * 1000 < Date.now() + 60000) await this._refresh();
@@ -33,6 +33,31 @@ export class Remote {
     const r = await fetch(`${SUPABASE.url}/auth/v1/otp?redirect_to=${encodeURIComponent(location.origin + location.pathname)}`, { method: 'POST', headers: { apikey: SUPABASE.anonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, create_user: true }) });
     if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.msg || j.error_description || j.message || 'Could not send the sign-in email'); }
   }
+  /* ----- email + password sign-in (no emailed link needed to sign up) ----- */
+  _adopt(j, email) {
+    const c = b64json((j.access_token || '').split('.')[1] || ''); this.s = { access_token: j.access_token, refresh_token: j.refresh_token, exp: c.exp || 0, email: c.email || email || '', uid: c.sub }; this._save();
+  }
+  async _auth(path, body, extra = '') {
+    const r = await fetch(`${SUPABASE.url}/auth/v1/${path}${extra}`, { method: 'POST', headers: { apikey: SUPABASE.anonKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(this._friendly(j)); return j;
+  }
+  _friendly(j) {
+    const m = String(j.msg || j.error_description || j.message || j.error || 'Something went wrong').toLowerCase();
+    if (m.includes('already registered') || m.includes('already been registered')) return 'That email already has an account. Use "Log in" instead.';
+    if (m.includes('invalid login')) return 'Wrong email or password.';
+    if (m.includes('password') && m.includes('characters')) return 'Choose a longer password (at least 8 characters).';
+    if (m.includes('rate limit')) return 'Too many tries right now. Please wait a few minutes.';
+    if (m.includes('email not confirmed')) return 'Please confirm your email first (check your inbox).';
+    return j.msg || j.error_description || j.message || 'Something went wrong';
+  }
+  async signUp(email, password) {
+    const j = await this._auth('signup', { email, password });
+    if (j.access_token) { this._adopt(j, email); return { signedIn: true }; }
+    return { signedIn: false, needsEmail: true };      // only when "Confirm email" is switched on in Supabase
+  }
+  async signInPassword(email, password) { const j = await this._auth('token', { email, password }, '?grant_type=password'); this._adopt(j, email); }
+  async resetPassword(email) { await this._auth('recover', { email }, `?redirect_to=${encodeURIComponent(location.origin + location.pathname)}`); }
+  async updatePassword(password) { await this.api('/auth/v1/user', { method: 'PUT', body: JSON.stringify({ password }) }); }
   signOut() { this.s = null; this._save(); }
 
   async api(path, opts = {}) {

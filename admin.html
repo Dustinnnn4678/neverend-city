@@ -29,7 +29,7 @@ let tab = 'claims';
 
 async function boot() {
   await R.init();
-  if (!R.signedIn) { $('auth').innerHTML = 'You are not signed in. Open <a href="./">the city</a>, click <b>Sign in</b>, use the emailed link, then come back to this page.'; return; }
+  if (!R.signedIn) { $('auth').innerHTML = 'You are not signed in. Open <a href="./">the city</a>, click <b>Sign in</b> and log in with your email and password, then come back to this page.'; return; }
   let isAdmin = false; try { isAdmin = await rpc('is_admin'); } catch (e) { fail(e); }
   if (!isAdmin) { $('auth').innerHTML = `Signed in as ${esc(R.email)} but this account is not an admin yet. In Supabase run the "make admin" SQL from the guide, then reload. <button id="out">Sign out</button>`; $('out').onclick = () => { R.signOut(); location.reload(); }; return; }
   $('auth').innerHTML = `Signed in as ${esc(R.email)} (admin) <button id="out">Sign out</button> <a href="./">Back to the city</a>`; $('out').onclick = () => { R.signOut(); location.reload(); }; $('app').style.display = 'block'; render();

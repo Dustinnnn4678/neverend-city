@@ -14,10 +14,11 @@ Do these steps in order. Do not paste any key into chat; tell me when a step is 
 3. New query again: do the same with `supabase/seed.sql` (levels, cosmetics, crate odds).
 4. If either one shows a red error, copy the error text to me. I will fix the file and you run it again.
 
-## 3. Turn on email sign-in (magic link, no passwords)
-1. **Authentication** then **Providers**: make sure **Email** is on. Leave "Confirm email" on.
-2. **Authentication** then **URL Configuration**: set **Site URL** to `https://dustinnnn4678.github.io/neverend-city/` and add the same address plus `admin.html` to **Redirect URLs**.
-3. (Optional) **Authentication** then **Rate Limits**: keep the defaults so nobody can spam sign-in emails.
+## 3. Turn on sign-in (email + password, instant, no emailed link)
+1. **Authentication** then **Sign In / Providers**: open **Email**. Keep **Enable Email provider** on and turn **Confirm email OFF**, so a new visitor is signed in the moment they create an account (no email to wait for, so 1,000 people can join in a day).
+2. **Authentication** then **URL Configuration**: set **Site URL** to `https://dustinnnn4678.github.io/neverend-city/` and add the same address plus `/**` and `http://localhost:8765/**` to **Redirect URLs** (used by the password-reset link).
+3. **Authentication** then **Rate Limits**: sign-ups and sign-ins default to a few dozen per 5 minutes per visitor address, which is fine. Later, turn on **Attack Protection** (CAPTCHA) if bots show up.
+4. Emails are now only sent for **forgotten-password resets**. Supabase's built-in sender is tiny; add a free email service (Brevo) before launch.
 
 ## 4. Copy two values into `config.js`
 **Project Settings** then **API**: copy **Project URL** and the **anon public** key into `config.js`. These two are safe to publish.
