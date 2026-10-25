@@ -34,6 +34,8 @@
   #newest::after { content:""; display:block; width:1px; height:26px; margin:6px auto 0; background:linear-gradient(#9fe2ff,transparent); }
   #loading { position:fixed; inset:0; display:grid; place-items:center; background:#05070f; color:var(--dim); letter-spacing:.4em; font-size:12px; text-transform:uppercase; transition:opacity 1.2s; }
   #loading.done { opacity:0; pointer-events:none; }
+  #fade { position:fixed; inset:0; background:#05070f; opacity:0; pointer-events:none; transition:opacity .55s; z-index:20; }
+  #fade.on { opacity:1; }
   #err { position:fixed; left:16px; right:16px; bottom:90px; color:#ffb4a8; font-size:13px; text-align:center; display:none; }
 </style>
 <script type="importmap">
@@ -69,6 +71,7 @@
   </div>
 </div>
 <div id="dev"><b>Test slider (dev only)</b><input id="devr" type="range" min="0" max="1000" value="0"><input id="devn" type="number" min="0" max="100000" step="1"></div>
+<div id="fade"></div>
 <div id="loading">Building city</div>
 <div id="err"></div>
 <script type="module" src="main.js"></script>

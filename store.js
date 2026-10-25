@@ -1,0 +1,22 @@
+// DEMO storage for homes, furniture and businesses. Saved only in this browser (localStorage).
+// When the real server exists, replace this file with one that talks to the server; the economy rules
+// in economy.js already run server-side from timestamps, so the browser can never invent coins.
+const KEY = 'neverend.demo.v1';
+
+function fresh() {
+  return { v: 1, coins: 250, seed: 1 + Math.floor(Math.random() * 1e6), furniture: {}, business: {}, likes: {}, visits: {}, starter: {}, uid: 1, player: { boost2x: false, supporter: false, longOffline: false } };
+}
+function load() {
+  try { const raw = localStorage.getItem(KEY); if (raw) { const s = JSON.parse(raw); if (s && s.v === 1) return s; } } catch (e) { /* private mode: run in memory */ }
+  return fresh();
+}
+export const store = {
+  state: load(),
+  save() { try { localStorage.setItem(KEY, JSON.stringify(this.state)); } catch (e) { /* ignore */ } },
+  reset() { this.state = fresh(); this.save(); },
+  canAfford(n) { return this.state.coins >= n; },
+  spend(n) { if (n > this.state.coins) return false; this.state.coins -= n; this.save(); return true; },
+  earn(n) { this.state.coins += Math.max(0, Math.floor(n)); this.save(); },
+  furnitureOf(id) { return (this.state.furniture[id] ||= []); },
+  nextUid() { return this.state.uid++; },
+};

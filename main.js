@@ -10,6 +10,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { genCity, MILESTONES, nextMilestone, UNLOCK_INDEX, UNLOCK_POS, platformOf, blockSite, siteUnlocked, SITES, L, P, T } from './city-gen.js';
 import { makeMaterials, getModel } from './models.js';
 import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } from './infra.js';
+import { InteriorSystem, canEnter } from './interior.js';
+import { store } from './store.js';
 
 /* ---------- basics ---------- */
 const POLL_MS = 30000, DAY_SECONDS = 150, MAX_N = 100000;
@@ -41,7 +43,7 @@ scene.fog = new THREE.FogExp2(0x9fbfe6, 0.0007);
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: isMobile ? 2 : 4 }));
 composer.setPixelRatio(pixelRatio); composer.setSize(innerWidth, innerHeight);
-composer.addPass(new RenderPass(scene, camera));
+const renderPass = new RenderPass(scene, camera); composer.addPass(renderPass);
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.4, 0.45, 0.9);
 composer.addPass(bloom); composer.addPass(new OutputPass());
 
@@ -242,6 +244,7 @@ function buildWorld(n, firstNew) {
   for (const g of groups.values()) {
     const mesh = new THREE.InstancedMesh(g.model.parts[g.mat], materials[g.mat], g.items.length);
     mesh.castShadow = g.mat !== 'sign'; mesh.receiveShadow = true; mesh.frustumCulled = !g.items.some(s => animSet.has(s.i));
+    mesh.userData.items = g.items;
     g.items.forEach((s, slot) => { s.refs.push({ mesh, slot }); mesh.setColorAt(slot, s.base); });
     mesh.instanceColor.needsUpdate = true; g.chunk.hi.add(mesh);
   }
@@ -646,6 +649,37 @@ $('devr').addEventListener('change', e => { devActive = true; setCount(Math.roun
 $('devn').addEventListener('change', e => { devActive = true; setCount(Number(e.target.value) || 0); });
 addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.key === '+' || e.key === '=') { devActive = true; setCount(count + 1); } });
 
+/* ---------- interiors (demo mode): click a house or shop to go inside ---------- */
+const demo = params.has('demo') || dev;
+const fadeEl = $('fade');
+const interior = new InteriorSystem({
+  renderer, renderPass, canvas, envMap: scene.environment, store, getNight: () => windowF, notify: msg => toast(msg),
+  onExit: () => {
+    fadeEl.classList.add('on');
+    setTimeout(() => { renderPass.scene = scene; renderPass.camera = camera; fly = null; controls.enabled = true; $('hud').style.display = ''; $('dev').style.visibility = ''; labelEl.style.opacity = 0; fadeEl.classList.remove('on'); }, 450);
+  },
+});
+let entering = false;
+function openBuilding(s) {
+  if (entering || interior.active) return; entering = true;
+  flyTo(s.x, 4, s.z, 44, 6); toast('Going inside…');
+  setTimeout(() => fadeEl.classList.add('on'), 1900);
+  setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; interior.enter(s); fadeEl.classList.remove('on'); entering = false; }, 2500);
+}
+const pickRay = new THREE.Raycaster(), pickNdc = new THREE.Vector2(); let pdown = null;
+const visibleChain = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+canvas.addEventListener('pointerdown', e => { pdown = [e.clientX, e.clientY, performance.now()]; });
+canvas.addEventListener('pointerup', e => {
+  const d = pdown; pdown = null;
+  if (!demo || !W || interior.active || entering || !d || Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 5 || performance.now() - d[2] > 350) return;
+  const r = canvas.getBoundingClientRect(); pickNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); pickRay.setFromCamera(pickNdc, camera);
+  const meshes = []; world.traverse(o => { if (o.isInstancedMesh && o.userData.items && visibleChain(o)) meshes.push(o); });
+  const hit = pickRay.intersectObjects(meshes, false)[0]; if (!hit) return;
+  const s = hit.object.userData.items[hit.instanceId]; if (!s) return;
+  if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
+});
+if (demo) setTimeout(() => toast('Demo: click a house or shop to go inside'), 4000);
+
 /* ---------- loop ---------- */
 const labelEl = $('newest'), proj = new THREE.Vector3(), beam = (() => {
   const c = cv(8, 256), g = c.getContext('2d'), grd = g.createLinearGradient(0, 0, 0, 256); grd.addColorStop(0, 'rgba(255,255,255,0)'); grd.addColorStop(.7, 'rgba(255,255,255,.35)'); grd.addColorStop(1, 'rgba(255,255,255,1)'); g.fillStyle = grd; g.fillRect(0, 0, 8, 256);
@@ -660,6 +694,7 @@ function frame(nowMs) {
   const dt = Math.min((nowMs - last) / 1000, 0.1); last = nowMs; const now = nowMs / 1000;
   if (mode === 'auto') { tDay = (tDay + dt / DAY_SECONDS) % 1; tTarget = tDay; } else { const diff = ((tTarget - tDay + 1.5) % 1) - 0.5; tDay = (tDay + diff * Math.min(1, dt * 1.6) + 1) % 1; }
   updateRain(dt, now); applyTime(tDay);
+  if (interior.active) { renderer.toneMappingExposure = 0.9; bloom.strength = 0.35; interior.update(dt); composer.render(); return; }
   if (!fly) {
     const off = camera.position.clone().sub(controls.target), sph = new THREE.Spherical().setFromVector3(off); introT = Math.min(introT + dt / 6, 1); const k = easeOut(introT);
     if (introT < 1 && !userTouched) { sph.radius = lerp(desiredDist * 1.9, desiredDist, k); sph.phi = lerp(0.62, 1.15, k); } else if (!userTouched) sph.radius += (desiredDist - sph.radius) * Math.min(1, dt * 0.8);
@@ -690,7 +725,7 @@ frameView();
 addEventListener('resize', () => { frameView(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); if (W) fitCamera(); });
 
 /* ---------- go ---------- */
-window.__city = { renderer, composer, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
+window.__city = { renderer, composer, interior, openBuilding, store, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
 (async () => {
   try {
     if (params.has('count')) { live = { instagram: Math.round(Number(params.get('count')) * 0.6), youtube: 0, total: Number(params.get('count')) }; live.youtube = live.total - live.instagram; setCount(live.total, { celebrateOk: false }); }
