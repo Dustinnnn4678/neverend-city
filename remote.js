@@ -24,9 +24,9 @@ export class Remote {
     if (this.s && this.s.exp && this.s.exp * 1000 < Date.now() + 60000) await this._refresh();
   }
   async _refresh() {
-    if (!this.s || !this.s.refresh_token) { this.s = null; this._save(); return; }
+    if (!this.s || !this.s.refresh_token) { this.s = null; this._save(); this.lastError = 'Your sign-in expired. Please sign in again.'; return; }
     const r = await fetch(`${SUPABASE.url}/auth/v1/token?grant_type=refresh_token`, { method: 'POST', headers: { apikey: SUPABASE.anonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: this.s.refresh_token }) });
-    if (!r.ok) { this.s = null; this._save(); return; }
+    if (!r.ok) { this.s = null; this._save(); this.lastError = 'Your sign-in expired. Please sign in again.'; return; }
     const j = await r.json(), c = b64json((j.access_token || '').split('.')[1] || ''); this.s = { access_token: j.access_token, refresh_token: j.refresh_token, exp: c.exp || 0, email: c.email || this.s.email, uid: c.sub }; this._save();
   }
   async signInEmail(email) {
