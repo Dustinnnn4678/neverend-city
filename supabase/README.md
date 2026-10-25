@@ -50,6 +50,12 @@ Instagram comments cannot be read without the Meta token, so verify those by han
 ## 7. Keep the daily golden objects fresh
 Each day open `admin.html`, **Milestones and events**, and press **Create today's 3**. (A scheduled job can do this later.)
 
+## 8. Later phases (run each file once, in this order, after schema.sql and seed.sql)
+1. `payments.sql`: payment records and the supporter badge.
+2. `tycoon.sql`: homes, furniture and businesses (City Coins) decided by the database.
+3. `community.sql`: quests, 28-day calendar, news feed, friends, achievements, co-op projects, reports, bans, invite-only beta, admin stats.
+Open the file, copy everything, paste into **SQL Editor → New query**, press **Run**. See `docs/LAUNCH-CHECKLIST.md` for the full list.
+
 ## What the website does once connected
 The browser only calls the `rpc_*` functions. Points, crates, golden objects and claims are decided in the database, so editing the page cannot create points. Rate limits are built in. Emails are never shown anywhere public; the public views only expose usernames people chose to show.
 

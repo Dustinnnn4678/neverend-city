@@ -34,8 +34,27 @@ async function boot() {
   if (!isAdmin) { $('auth').innerHTML = `Signed in as ${esc(R.email)} but this account is not an admin yet. In Supabase run the "make admin" SQL from the guide, then reload. <button id="out">Sign out</button>`; $('out').onclick = () => { R.signOut(); location.reload(); }; return; }
   $('auth').innerHTML = `Signed in as ${esc(R.email)} (admin) <button id="out">Sign out</button> <a href="./">Back to the city</a>`; $('out').onclick = () => { R.signOut(); location.reload(); }; $('app').style.display = 'block'; render();
 }
-const TABS = [['claims', 'Claims'], ['giveaways', 'Giveaways'], ['streets', 'Street names'], ['cosmetics', 'Cosmetics and crate odds'], ['milestone', 'Milestones and events'], ['stats', 'Stats']];
-function render() { $('nav').innerHTML = TABS.map(([id, n]) => `<button data-t="${id}" class="${tab === id ? 'on' : ''}">${n}</button>`).join(''); $('nav').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); }); ({ claims, giveaways, streets, cosmetics, milestone, stats })[tab]().catch(fail); }
+const TABS = [['claims', 'Claims'], ['giveaways', 'Giveaways'], ['streets', 'Street names'], ['cosmetics', 'Cosmetics and crate odds'], ['milestone', 'Milestones and events'], ['moderation', 'Reports'], ['launch', 'Beta and community'], ['stats', 'Stats']];
+function render() { $('nav').innerHTML = TABS.map(([id, n]) => `<button data-t="${id}" class="${tab === id ? 'on' : ''}">${n}</button>`).join(''); $('nav').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); }); ({ claims, giveaways, streets, cosmetics, milestone, moderation, launch, stats })[tab]().catch(fail); }
+
+async function moderation() {
+  const rows = await rpc('admin_reports');
+  $('view').innerHTML = `<h2>Open reports</h2><div class="dim">Players report names, homes and text with the Report button. Dismiss, remove the claim, or ban the account.</div><div class="card"><table><tr><th>When</th><th>What</th><th>Building</th><th>Player</th><th>Reason</th><th></th></tr>${rows.map(r => `<tr><td>${new Date(r.at).toLocaleString()}</td><td>${esc(r.kind)}</td><td>${r.building == null ? '' : '#' + (r.building + 1)}</td><td>${esc(r.target || '')}</td><td>${esc(r.reason)}</td><td><button data-a="dismiss" data-id="${r.id}">Dismiss</button> <button class="bad" data-a="remove" data-id="${r.id}">Remove claim</button> <button class="bad" data-a="ban" data-id="${r.id}">Ban</button></td></tr>`).join('') || '<tr><td colspan="6" class="dim">Nothing to review.</td></tr>'}</table></div>`;
+  $('view').querySelectorAll('[data-a]').forEach(b => b.onclick = async () => { if (b.dataset.a !== 'dismiss' && !confirm('Are you sure?')) return; try { await rpc('admin_resolve_report', { p_id: +b.dataset.id, p_action: b.dataset.a }); } catch (e) { fail(e); } moderation().catch(fail); });
+}
+async function launch() {
+  const st = await rpc('admin_stats');
+  $('view').innerHTML = `<h2>Invite-only beta</h2><div class="card"><div class="dim">While beta mode is ON, only people with an invite code (and you) can play. Everyone can still look at the city.</div><div class="row" style="margin-top:8px">Beta mode is <b>${esc(st.beta_mode)}</b> <button id="bon" class="good">Turn on</button> <button id="boff">Turn off</button></div>
+<div class="row" style="margin-top:12px"><input id="ic" type="number" value="25" style="width:70px"> codes, each works <input id="im" type="number" value="1" style="width:60px"> time(s) <input id="in" placeholder="note (e.g. Instagram followers)" size="26"><button id="imake">Make codes</button></div><pre id="icodes" style="user-select:all"></pre>
+<div class="row" style="margin-top:12px"><span class="dim">Before the public launch: removes every non-admin account and its data (only works while beta mode is on).</span><button class="bad" id="breset">Reset beta data</button></div></div>
+<h2>City news</h2><div class="card"><div class="dim">Posts a line to the news feed, e.g. "Milestone: 2,500, highway unlocked!"</div><div class="row" style="margin-top:8px"><input id="nt" size="50" maxlength="200" placeholder="News text"><button id="npost">Post</button></div></div>
+<h2>Community project</h2><div class="card"><div class="dim">Everyone chips in coins. Each player can give up to the cap. When it is funded everyone who helped gets the reward.</div><div class="row" style="margin-top:8px"><input id="cn" placeholder="Name (e.g. Giant Ferris Wheel)" size="28"><input id="cg" type="number" value="500000" style="width:100px"> goal <input id="cc" type="number" value="5000" style="width:80px"> cap per player <input id="cr" type="number" value="500" style="width:70px"> reward <button id="cmake">Create</button></div></div>`;
+  $('bon').onclick = async () => { await rpc('admin_set_beta', { p_on: true }).catch(fail); launch().catch(fail); }; $('boff').onclick = async () => { await rpc('admin_set_beta', { p_on: false }).catch(fail); launch().catch(fail); };
+  $('imake').onclick = async () => { try { const c = await rpc('admin_make_invites', { p_count: +$('ic').value, p_max_uses: +$('im').value, p_note: $('in').value }); $('icodes').textContent = c.join('\n'); } catch (e) { fail(e); } };
+  $('breset').onclick = async () => { const t = prompt('This deletes every non-admin account and its data. Type RESET BETA to confirm:'); if (t === null) return; try { await rpc('admin_reset_beta', { p_confirm: t }); alert('Done'); } catch (e) { fail(e); } };
+  $('npost').onclick = async () => { try { await rpc('admin_post_news', { p_text: $('nt').value }); $('nt').value = ''; alert('Posted'); } catch (e) { fail(e); } };
+  $('cmake').onclick = async () => { try { await rpc('admin_create_coop', { p_name: $('cn').value, p_goal: +$('cg').value, p_cap: +$('cc').value, p_reward: +$('cr').value }); alert('Created'); } catch (e) { fail(e); } };
+}
 
 async function claims() {
   const data = await sel('claims?select=*&order=created_at.desc&limit=200');
@@ -70,8 +89,8 @@ async function milestone() {
   $('gb').onclick = async () => { try { const d = await rpc('admin_ensure_golden', { p_day: Math.floor(Date.now() / 86400000), p_total: +$('gt2').value }); alert('Today: building numbers ' + d.map(x => x + 1).join(', ')); } catch (e) { fail(e); } };
 }
 async function stats() {
-  const [p, c] = await Promise.all([sel('profiles?select=id&limit=10000'), sel('claims?select=id,status&limit=10000')]);
-  $('view').innerHTML = `<h2>Stats</h2><div class="card">Players: <b>${p.length}</b><br>Claims: <b>${c.length}</b> (verified ${c.filter(x => x.status === 'verified').length})</div>`;
+  const s = await rpc('admin_stats'), pct = v => v == null ? 'not enough data yet' : v + '%';
+  $('view').innerHTML = `<h2>Stats</h2><div class="card">Players: <b>${s.players}</b> · Claims: <b>${s.claims}</b><br>Active today: <b>${s.dau}</b> · this week: <b>${s.wau}</b> · this month: <b>${s.mau}</b><br>Came back after 1 day: <b>${pct(s.d1)}</b> · after 7 days: <b>${pct(s.d7)}</b> · after 30 days: <b>${pct(s.d30)}</b><br>Live revenue so far: <b>$${(s.revenue_cents_live / 100).toFixed(2)}</b> <span class="dim">(test payments are not counted)</span><br>Open reports: <b>${s.open_reports}</b></div>`;
 }
 boot().catch(fail);
 </script></body></html>

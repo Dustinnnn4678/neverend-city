@@ -1,0 +1,24 @@
+name: Database backup (manual, encrypted)
+# Runs only when you press "Run workflow". It is NOT scheduled: a dump contains emails, and artifacts of a public repository
+# can be seen by other GitHub users. The dump is encrypted with BACKUP_PASSPHRASE before it is uploaded.
+# Needs repository secrets: SUPABASE_DB_URL (Postgres connection string) and BACKUP_PASSPHRASE.
+on: workflow_dispatch
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump and encrypt
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          pg_dump "$DB_URL" --no-owner --schema=public --schema=auth > backup.sql
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:PASS -in backup.sql -out backup.sql.enc
+          rm backup.sql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neverend-backup-encrypted
+          path: backup.sql.enc
+          retention-days: 7

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Neverend City milestone countdown</title>
+<meta name="description" content="How close is Neverend City to its next milestone?">
+<meta property="og:image" content="https://dustinnnn4678.github.io/neverend-city/og-image.jpg">
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(circle at 50% 30%,#1b2557,#05070f); color:#f4f7ff; font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; text-align:center; }
+  main { padding:24px 16px; max-width:640px; }
+  .big { font-size:min(22vw,150px); font-weight:800; line-height:1; letter-spacing:-.02em; }
+  .sub { opacity:.75; letter-spacing:.2em; text-transform:uppercase; font-size:13px; margin:6px 0 18px; }
+  .bar { height:16px; border-radius:99px; background:rgba(255,255,255,.14); overflow:hidden; border:2px solid rgba(255,255,255,.4); } .bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,#ffd23a,#ff6bd6); transition:width 1.2s; }
+  .hot { margin-top:18px; padding:10px 16px; border-radius:99px; display:none; background:linear-gradient(90deg,#ff6bd6,#ffb020); color:#1a1020; font-weight:800; letter-spacing:.1em; }
+  a.btn { display:inline-block; margin-top:22px; padding:12px 22px; border-radius:99px; background:#2f6bff; color:#fff; text-decoration:none; font-weight:700; }
+  :focus-visible { outline:3px solid #ffd23a; outline-offset:2px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="sub" id="what">Next milestone</div>
+  <div class="big" id="left">…</div>
+  <div class="sub">more followers to go</div>
+  <div class="bar" role="progressbar" aria-label="Progress to the next milestone"><i id="fill"></i></div>
+  <p id="line"></p>
+  <div class="hot" id="hot">ALMOST THERE! WITHIN 10%</div>
+  <a class="btn" href="./">Open the city</a>
+</main>
+<script type="module">
+import { MILESTONES } from './city-gen.js';
+const live = await fetch('live.json?t=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).catch(() => ({ total: 0 }));
+const n = Number(live.total || 0), prev = [...MILESTONES].reverse().find(m => m.at <= n) || { at: 0, name: 'Start' }, next = MILESTONES.find(m => m.at > n);
+if (!next) { document.getElementById('left').textContent = '∞'; document.getElementById('line').textContent = 'Every milestone is unlocked!'; }
+else {
+  const span = next.at - prev.at, done = n - prev.at, pct = Math.max(0, Math.min(100, Math.round(done / span * 100)));
+  document.getElementById('left').textContent = (next.at - n).toLocaleString();
+  document.getElementById('what').textContent = `Next: ${next.name} at ${next.at.toLocaleString()}`;
+  document.getElementById('line').textContent = `${n.toLocaleString()} buildings now. ${pct}% of the way from ${prev.at.toLocaleString()}.`;
+  requestAnimationFrame(() => { document.getElementById('fill').style.width = pct + '%'; });
+  if (pct >= 90) document.getElementById('hot').style.display = 'inline-block';
+}
+</script>
+</body>
+</html>

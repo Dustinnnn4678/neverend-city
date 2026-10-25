@@ -136,6 +136,36 @@ export class Visitor {
   open(tab) { if (tab) this.tab = tab; this.root.style.display = 'block'; this.render(); if (this.remote && this.remote.signedIn) this.run(async () => { await this.sync(true); await this.loadPublic(); if (this.root.style.display === 'block') this.render(); }); }
   close() { this.root.style.display = 'none'; }
 
+  /* ----- live-site extras: daily and weekly quests, calendar, achievements, news, friends, community projects ----- */
+  async _dailyQuests(box) {
+    const q = await this.run(() => this.remote.rpc('rpc_quests')); if (!q || this.tab !== 'quests' || !box.isConnected) return;
+    const row = x => `<div class="q ${x.claimed ? 'done' : ''}"><div class="qi">${x.claimed ? '✅' : '🎯'}</div><div class="qb"><div class="qt">${esc(x.title)}</div><div class="dim">${x.progress}/${x.target} · +${x.coins} 🪙 +${x.points} ★</div></div>${x.progress >= x.target && !x.claimed ? `<button class="gbtn gold pulse" data-claimq="${x.id}">Claim</button>` : ''}</div>`;
+    box.innerHTML = `<div class="dim" style="margin:2px 0 6px">TODAY'S QUESTS ${q.freezeAvailable ? '· ❄️ streak freeze ready' : ''}</div>${q.daily.map(row).join('')}<div class="dim" style="margin:10px 0 6px">THIS WEEK (finish all 5 for a weekly chest 🎁)</div>${q.weekly.map(row).join('')}<div style="height:6px"></div>`;
+    box.querySelectorAll('[data-claimq]').forEach(b => b.addEventListener('click', async () => {
+      const r = await this.run(() => this.remote.rpc('rpc_claim_quest', { p_id: b.dataset.claimq })); if (!r) return; G.confetti(80); this.notify(`+${r.coins} coins, +${r.points} stars${r.chest ? ' and a weekly chest!' : ''}`); await this.run(() => this.sync()); this.render();
+    }));
+  }
+  async _rewards(el) {
+    el.innerHTML = '<div class="dim">Loading…</div>';
+    const [cal, ach] = await Promise.all([this.run(() => this.remote.rpc('rpc_calendar')), this.run(() => this.remote.rpc('rpc_achievements'))]); if (!cal || this.tab !== 'rewards') return;
+    if (ach && ach.new) { G.confetti(100); this.notify(`${ach.new} new achievement${ach.new > 1 ? 's' : ''}!`); await this.run(() => this.sync()); }
+    const next = cal.claimed >= 28 ? 1 : cal.claimed + 1, cells = Array.from({ length: 28 }, (_, i) => { const d = i + 1, done = d <= cal.claimed, big = d % 7 === 0; return `<div class="q ${done ? 'done' : ''}" style="padding:6px;flex-direction:column;gap:2px;justify-content:center;text-align:center;${d === next && cal.canClaim ? 'border-color:#ffd23a;box-shadow:0 0 12px #ffd23a' : ''}"><b style="font-family:var(--game-font)">${d}</b><span>${done ? '✅' : big ? '🎁' : '🪙'}</span></div>`; }).join('');
+    const earned = new Set(ach ? ach.earned : []), defs = ach ? ach.defs : [];
+    el.innerHTML = `<div class="sc"><div style="font:400 20px var(--game-font)">📅 28-day login calendar</div><div class="dim">Claim once a day. Days 7, 14, 21 and 28 give a rare cosmetic. Missing a day never resets it.</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cells}</div><button class="gbtn gold big" id="calgo" ${cal.canClaim ? '' : 'disabled'}>${cal.canClaim ? `Claim day ${next}` : 'Come back tomorrow'}</button></div>
+<div class="sc"><div style="font:400 20px var(--game-font)">🏆 Achievements ${earned.size}/${ach ? ach.total : 0}</div><div class="dim">Each new one gives +10 ★. Your trophies:</div><div style="display:flex;flex-wrap:wrap;gap:6px">${defs.filter(d => earned.has(d.id)).map(d => `<span class="gpill" style="font-size:11px">${esc(d.title)}</span>`).join('') || '<span class="dim">None yet. Keep playing!</span>'}</div></div>`;
+    const go = el.querySelector('#calgo'); if (go) go.addEventListener('click', async () => { const r = await this.run(() => this.remote.rpc('rpc_calendar_claim')); if (!r) return; G.confetti(140); this.notify(`Day ${r.day}: +${r.coins} coins, +${r.points} stars${r.cosmetic ? ' and a rare cosmetic!' : ''}`); await this.run(() => this.sync()); this._rewards(el); });
+  }
+  async _city(el) {
+    el.innerHTML = '<div class="dim">Loading…</div>';
+    const ago = t => { const s = Math.max(1, (Date.now() - Date.parse(t)) / 1000); return s < 3600 ? Math.round(s / 60) + 'm' : s < 86400 ? Math.round(s / 3600) + 'h' : Math.round(s / 86400) + 'd'; };
+    const [feed, fr, coop] = await Promise.all([this.run(() => this.remote.select('public_feed?select=at,text')), this.run(() => this.remote.rpc('rpc_friend_feed')), this.run(() => this.remote.rpc('rpc_coop_list'))]); if (!feed || this.tab !== 'city') return;
+    el.innerHTML = `<div class="sc"><div style="font:400 20px var(--game-font)">📰 City news</div>${feed.slice(0, 12).map(f => `<div class="rank"><span>${esc(f.text)}</span><span class="dim" style="margin-left:auto">${ago(f.at)}</span></div>`).join('') || '<div class="dim">Quiet so far.</div>'}</div>
+<div class="sc"><div style="font:400 20px var(--game-font)">👥 Friends</div><div style="display:flex;gap:8px"><input type="text" id="fname" placeholder="@their username" maxlength="31"><button class="gbtn blue" id="fgo">Follow</button></div><div class="dim">Following: ${fr && fr.following.length ? fr.following.map(n => '@' + esc(n)).join(', ') : 'nobody yet'}</div>${(fr ? fr.feed : []).slice(0, 8).map(f => `<div class="rank"><span>${esc(f.text)}</span><span class="dim" style="margin-left:auto">${ago(f.at)}</span></div>`).join('')}</div>
+<div class="sc"><div style="font:400 20px var(--game-font)">🏗️ Community projects</div>${(coop || []).map(p => `<div class="q"><div class="qi">${p.status === 'done' ? '🎉' : '🎡'}</div><div class="qb"><div class="qt">${esc(p.name)}</div><div class="xp"><i style="width:${Math.min(100, Math.round(p.funded / p.goal * 100))}%"></i></div><div class="dim">${fmt(p.funded)} / ${fmt(p.goal)} coins · you gave ${fmt(p.mine)} of max ${fmt(p.cap)}</div></div>${p.status === 'open' ? `<button class="gbtn gold" data-coop="${p.id}">+100</button>` : ''}</div>`).join('') || '<div class="dim">No project is open right now.</div>'}</div>`;
+    const fgo = el.querySelector('#fgo'); fgo.addEventListener('click', async () => { const r = await this.run(() => this.remote.rpc('rpc_follow', { p_username: el.querySelector('#fname').value })); if (r) { this.notify('Following!'); this._city(el); } });
+    el.querySelectorAll('[data-coop]').forEach(b => b.addEventListener('click', async () => { const r = await this.run(() => this.remote.rpc('rpc_coop_contribute', { p_project: +b.dataset.coop, p_amount: 100 })); if (r) { this.notify(r.done ? 'Project finished! Everyone who helped gets a reward.' : 'Thank you! +100 coins given.'); this._city(el); } }));
+  }
+
   renderSignIn() {
     this.tabsEl.innerHTML = ''; const el = this.body, mode = this.authMode || 'create';
     if (this.remote.recovery) {
@@ -165,7 +195,7 @@ ${mode === 'create' ? '<label style="display:flex;gap:8px;align-items:center"><i
 
   render() {
     if (this.remote && !this.remote.signedIn) { this.renderSignIn(); return; }
-    const TABS = [['quests', 'Quests'], ['building', 'My building'], ['style', 'Style'], ['crates', 'Crates'], ['leaders', 'Leaders'], ['support', 'Support'], ['more', 'More']];
+    const TABS = [['quests', 'Quests'], ['building', 'My building'], ['rewards', 'Rewards'], ['city', 'City'], ['style', 'Style'], ['crates', 'Crates'], ['leaders', 'Leaders'], ['support', 'Support'], ['more', 'More']];
     this.tabsEl.innerHTML = TABS.map(([id, n]) => `<button data-t="${id}" class="${this.tab === id ? 'on' : ''}">${n}</button>`).join(''); this.tabsEl.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { this.tab = b.dataset.t; this.render(); }));
     const el = this.body, v = this.v, lv = this.level, nl = nextLevel(v.points), cur = LEVELS.find(l => l.level === lv); const bind = (sel, fn) => el.querySelectorAll(sel).forEach(e => e.addEventListener('click', () => fn(e)));
     const { W, count, next } = this.getCtx(), today = dayIndex(Date.now()), checked = v.lastDay === today;
@@ -173,7 +203,7 @@ ${mode === 'create' ? '<label style="display:flex;gap:8px;align-items:center"><i
     if (this.tab === 'quests') {
       const pct = nl ? Math.round((v.points - cur.at) / (nl.at - cur.at) * 100) : 100, found = this.foundToday(), c = v.claim, trackOn = checked ? ((v.streak - 1) % 7) + 1 : v.streak % 7;
       const quest = (icon, title, sub, reward, done, btn) => `<div class="q ${done ? 'done' : ''}"><div class="qi">${done ? '✅' : icon}</div><div class="qb"><div class="qt">${title}</div><div class="dim">${sub}</div></div>${btn || (reward ? `<div class="rw">${reward}</div>` : '')}</div>`;
-      el.innerHTML = `<div class="qhead"><div class="av">${esc(this.name.replace('@', '')[0] || 'B').toUpperCase()}</div><div style="flex:1"><div style="font:400 20px var(--game-font)">${esc(this.name)} · Level ${lv}${v.supporter ? ' <span class="gpill" style="font-size:11px;padding:2px 8px">★ SUPPORTER</span>' : ''}</div><div class="xp"><i style="width:${pct}%"></i></div><div class="dim">${nl ? `${fmt(v.points - cur.at)} / ${fmt(nl.at - cur.at)} ★ to Level ${nl.level}: ${esc(nl.unlocks[0])}` : 'Max level!'}</div></div></div>
+      el.innerHTML = `<div id="qlive"></div><div class="qhead"><div class="av">${esc(this.name.replace('@', '')[0] || 'B').toUpperCase()}</div><div style="flex:1"><div style="font:400 20px var(--game-font)">${esc(this.name)} · Level ${lv}${v.supporter ? ' <span class="gpill" style="font-size:11px;padding:2px 8px">★ SUPPORTER</span>' : ''}</div><div class="xp"><i style="width:${pct}%"></i></div><div class="dim">${nl ? `${fmt(v.points - cur.at)} / ${fmt(nl.at - cur.at)} ★ to Level ${nl.level}: ${esc(nl.unlocks[0])}` : 'Max level!'}</div></div></div>
 ${quest('📅', 'Daily check-in', `<div class="gstreak" style="justify-content:flex-start;margin:6px 0 0">${Array.from({ length: 7 }, (_, i) => `<i class="${i < trackOn ? 'on' : ''}" style="width:28px;height:28px;font-size:13px">${i === 6 ? '🎁' : i + 1}</i>`).join('')}</div>`, `+${dailyReward(Math.max(1, v.streak + (checked ? 1 : 0)))} ★`, checked)}
 ${quest('🌟', 'Find the golden stars', `${[0, 1, 2].map(i => i < found ? '★' : '☆').join(' ')} &nbsp; ${found}/3 found today`, '+25 ★ each', found >= 3, found < 3 ? `<button class="gbtn gold" id="qhunt">Find one</button>` : '')}
 ${quest('🏷️', 'Claim your building', c ? `${esc(c.platform)} · building #${c.building + 1}` : 'Put your name on a building', '', !!c, c ? '' : `<button class="gbtn blue" id="qclaim">Claim</button>`)}
@@ -183,6 +213,7 @@ ${next ? quest('🔮', 'Predict the next milestone', `When will the city reach $
 ${v.crates ? quest('🎁', `${v.crates} mystery crate${v.crates > 1 ? 's' : ''} ready!`, 'Open them to win cosmetics', '', false, `<button class="gbtn gold pulse" id="qcrate">Open</button>`) : ''}`;
       bind('#qhunt', () => { const t = this.goldenToday(Math.max(1, W ? W.S.length : 1)).find(i => !this.isFound(i)); if (t === undefined) this.notify('No stars to find right now.'); else { this.close(); this.locateGolden(t); } });
       bind('#qclaim', () => { this.tab = 'building'; this.render(); }); bind('#qver', () => { this.tab = 'building'; this.render(); }); bind('#qpred', () => { this.tab = 'more'; this.render(); }); bind('#qcrate', () => { this.tab = 'crates'; this.render(); });
+      if (this.remote) this._dailyQuests(el.querySelector('#qlive'));
       bind('#qinv', () => { const link = `${location.origin}${location.pathname}?ref=${v.referralCode}`; navigator.clipboard && navigator.clipboard.writeText(link); this.notify('Invite link copied! Send it to a friend.'); });
     }
 
@@ -238,11 +269,19 @@ ${c.status === 'verified' ? '<div class="q done"><div class="qi">✅</div><div c
 <div class="dim">Payments are handled by Stripe. We never see your card. ${STRIPE_LINKS.test ? 'Test card: 4242 4242 4242 4242, any future date, any CVC.' : ''}</div>`;
     }
 
+    if (this.tab === 'rewards') { if (!this.remote) el.innerHTML = '<div class="dim">The 28-day calendar and achievements work on the live site.</div>'; else this._rewards(el); }
+    if (this.tab === 'city') { if (!this.remote) el.innerHTML = '<div class="dim">The news feed, friends and community projects work on the live site.</div>'; else this._city(el); }
+
     if (this.tab === 'more') {
       const m = next, cur2 = m && v.predictions[m.at], opts = next && (this.remote ? this.voteRows.filter(r => r.milestone === next.at).map(r => r.option) : VOTE_OPTIONS[next.at]);
       el.innerHTML = `${m ? `<div class="sc"><div style="font:400 18px var(--game-font)">🔮 Predict: ${fmt(m.at)} buildings</div><div class="dim">Pick the day the city reaches ${fmt(m.at)} (${esc(m.name)}). Right now: ${fmt(count)}. Correct = <b>+200 ★</b>.</div><input type="date" id="pdate" value="${cur2 ? new Date(cur2 * DAY).toISOString().slice(0, 10) : ''}"><button class="gbtn blue" id="psave">Save my guess</button></div>` : ''}
 ${opts && opts.length ? `<div class="sc"><div style="font:400 18px var(--game-font)">🗳️ Vote: next landmark at ${fmt(next.at)}</div>${opts.map(o => `<button class="gbtn ${v.votes[next.at] === o ? 'green' : 'dark'}" data-vote="${esc(o)}">${esc(o)}${v.votes[next.at] === o ? ' ✓' : ''}</button>`).join('')}</div>` : ''}
-<div class="sc"><div style="font:400 18px var(--game-font)">⚙️ Your account</div>${this.remote ? `<div class="dim">Signed in as ${esc(this.remote.email)} (only you can see this)</div><button class="gbtn dark" id="sout">Log out</button>` : ''}<button class="gbtn dark" id="vdel">Delete my account and data</button><a href="privacy.html" target="_blank">Privacy (draft)</a></div>`;
+<div class="sc"><div style="font:400 18px var(--game-font)">⚙️ Your account</div>${this.remote ? `<div class="dim">Signed in as ${esc(this.remote.email)} (only you can see this)</div><button class="gbtn dark" id="sout">Log out</button>` : ''}<button class="gbtn dark" id="vdel">Delete my account and data</button><a href="privacy.html" target="_blank">Privacy (draft)</a></div>
+${this.remote ? `<div class="sc"><div style="font:400 18px var(--game-font)">🎟️ Beta invite code</div><input type="text" id="icode" placeholder="NC-XXXXXX" maxlength="12"><button class="gbtn blue" id="iredeem">Use code</button></div>
+<div class="sc"><div style="font:400 18px var(--game-font)">🚩 Report a problem</div><div class="dim">Report a name, a home or anything that breaks the rules. Building number is optional.</div><input type="text" id="rbld" placeholder="Building number (optional)" inputmode="numeric"><input type="text" id="rwhy" placeholder="What is wrong?" maxlength="300"><button class="gbtn dark" id="rsend">Send report</button></div>` : ''}
+<div class="sc"><a href="help.html" target="_blank">Help and FAQ</a></div>`;
+      bind('#iredeem', async () => { const r = await this.run(() => this.remote.rpc('rpc_redeem_invite', { p_code: el.querySelector('#icode').value })); if (r) this.notify('Invite accepted. Welcome to the beta!'); });
+      bind('#rsend', async () => { const b = el.querySelector('#rbld').value.trim(), why = el.querySelector('#rwhy').value; const r = await this.run(async () => { await this.remote.rpc('rpc_report', { p_kind: b ? 'home' : 'other', p_building: b ? (+b - 1) : null, p_reason: why }); return true; }); if (r) { this.notify('Thank you. We will look at it.'); el.querySelector('#rwhy').value = ''; } });
       bind('#psave', async () => { const d = el.querySelector('#pdate').value; if (!d) return; const day = Math.floor(Date.parse(d + 'T00:00:00Z') / DAY); if (this.remote) { await this.run(() => this.remote.rpc('rpc_predict', { p_milestone: m.at, p_day: day })); await this.run(() => this.sync(true)); } else { v.predictions[m.at] = day; this.save(); } this.notify('Guess saved!'); this.render(); });
       bind('[data-vote]', async b => { if (this.remote) { await this.run(() => this.remote.rpc('rpc_vote', { p_milestone: next.at, p_option: b.dataset.vote })); await this.run(() => this.sync(true)); } else { v.votes[next.at] = b.dataset.vote; this.save(); } this.render(); });
       bind('#sout', () => { this.remote.signOut(); this.rv = visitorDefault(); this._lastPts = null; this.applyFx(); this.refreshBadge(true); this.render(); });

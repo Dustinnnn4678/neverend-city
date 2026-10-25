@@ -12,6 +12,7 @@ import { makeMaterials, getModel } from './models.js';
 import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } from './infra.js';
 import { InteriorSystem, canEnter, HOME_TYPES } from './interior.js';
 import { RemoteGameStore } from './gamestore.js';
+import './monitor.js';
 import { store } from './store.js';
 import { previewStage, statsStage, crateStage, shareStage, roofItem, labelTex } from './stages.js';
 import { Visitor } from './visitor.js';
@@ -36,7 +37,7 @@ function hash2(x, z) { let h = (Math.imul(x | 0, 374761393) + Math.imul(z | 0, 6
 /* ---------- renderer, scene, post ---------- */
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-let pixelRatio = Math.min(devicePixelRatio || 1, isMobile ? 1.75 : 2);
+let prCap = Math.min(devicePixelRatio || 1, isMobile ? 1.75 : 2), pixelRatio = prCap;
 renderer.setPixelRatio(pixelRatio); renderer.setSize(innerWidth, innerHeight, false);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -685,7 +686,8 @@ function updateBizFx(t) {
 
 /* ---------- interiors (demo mode): click a house or shop to go inside ---------- */
 const demo = params.has('demo') || dev;
-const useRemote = remoteConfigured && (params.has('remote') || !demo), visitorOn = demo || useRemote;
+const embed = params.has('embed');                                   // ?embed=1: a clean, slowly turning city for other websites
+const useRemote = remoteConfigured && (params.has('remote') || !demo), visitorOn = (demo || useRemote) && !embed;
 { const ref = params.get('ref'); if (ref) { try { localStorage.setItem('nc.ref', String(ref).slice(0, 20)); } catch (e) { /* ignore */ } } }
 const fadeEl = $('fade');
 const interior = new InteriorSystem({
@@ -899,20 +901,66 @@ function frame(nowMs) {
   if ((frames & 7) === 0) updateChunks();
   composer.render();
   frames++; slowMs += dt * 1000;
-  if (frames === 90) { const avg = slowMs / frames; frames = 0; slowMs = 0; if (avg > 26 && pixelRatio > 0.8) setPR(pixelRatio - 0.25); else if (avg < 12 && pixelRatio < Math.min(devicePixelRatio || 1, isMobile ? 1.75 : 2) - 0.01) setPR(pixelRatio + 0.25); }
+  if (frames === 90) { const avg = slowMs / frames; frames = 0; slowMs = 0; if (avg > 26 && pixelRatio > 0.8) setPR(pixelRatio - 0.25); else if (avg < 12 && pixelRatio < prCap - 0.01) setPR(pixelRatio + 0.25); }
 }
 function setPR(v) { pixelRatio = v; renderer.setPixelRatio(v); composer.setPixelRatio(v); composer.setSize(innerWidth, innerHeight); }
 function frameView() { camera.aspect = innerWidth / innerHeight; camera.setViewOffset(innerWidth, innerHeight, 0, -innerHeight * 0.1, innerWidth, innerHeight); camera.updateProjectionMatrix(); }
 frameView();
 addEventListener('resize', () => { frameView(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); if (W) fitCamera(); });
 
+/* ---------- quality, accessibility, bug report, embed, studio ---------- */
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
+function autoQuality() { const mem = navigator.deviceMemory || 4, cores = navigator.hardwareConcurrency || 4; return (isMobile && (mem <= 3 || cores <= 4)) || mem <= 2 ? 'low' : (isMobile || cores <= 4 ? 'med' : 'high'); }
+function applyQuality(pref) {
+  const q = pref === 'auto' ? autoQuality() : pref; prCap = Math.min(devicePixelRatio || 1, { low: 1, med: 1.5, high: isMobile ? 1.75 : 2 }[q]);
+  bloom.enabled = q !== 'low'; sun.castShadow = q !== 'low'; setPR(Math.min(pixelRatio, prCap));
+  $('qual').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.q === pref));
+}
+let qpref = lsGet('nc.quality') || 'auto'; applyQuality(qpref);
+$('qual').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { qpref = b.dataset.q; lsSet('nc.quality', qpref); applyQuality(qpref); toast('Graphics: ' + qpref); }));
+{ // reduce motion (starts from the device setting) and colour-blind friendly platform colours
+  const stored = lsGet('nc.rm'), rmOn = stored === null ? matchMedia('(prefers-reduced-motion: reduce)').matches : stored === '1';
+  const setRm = on => { document.body.classList.toggle('rm', on); document.body.classList.toggle('rmoff', !on); $('rm').classList.toggle('on', on); $('rm').setAttribute('aria-pressed', on); }; setRm(rmOn);
+  $('rm').addEventListener('click', () => { const on = !document.body.classList.contains('rm'); lsSet('nc.rm', on ? '1' : '0'); setRm(on); });
+  const setCb = on => { document.body.classList.toggle('cb', on); on ? (PLAT.ig.setRGB(0, 0.45, 0.7), PLAT.yt.setRGB(0.9, 0.6, 0)) : (PLAT.ig.setRGB(1.0, 0.3, 0.75), PLAT.yt.setRGB(1.0, 0.22, 0.2)); $('cb').classList.toggle('on', on); $('cb').setAttribute('aria-pressed', on); if (W) applyPlatform(); };
+  if (lsGet('nc.cb') === '1') setCb(true); $('cb').addEventListener('click', () => { const on = !document.body.classList.contains('cb'); lsSet('nc.cb', on ? '1' : '0'); setCb(on); });
+}
+$('bug').addEventListener('click', async () => {
+  const text = prompt('What went wrong? (We add your device info automatically.)'); if (!text) return;
+  const device = { ua: navigator.userAgent, screen: innerWidth + 'x' + innerHeight, dpr: devicePixelRatio, quality: qpref, count, mem: navigator.deviceMemory || null, cores: navigator.hardwareConcurrency || null, page: location.pathname };
+  if (visitor.remote && visitor.remote.signedIn) { try { await visitor.remote.rpc('rpc_bug_report', { p_text: text, p_device: device }); toast('Thank you! Bug report sent.'); } catch (e) { toast(e.message); } }
+  else toast('Sign in first (tap Quests), then send the report. Or see the Help page.');
+});
+if (embed) {
+  for (const id of ['top', 'bottom', 'dev']) { const e = $(id); if (e) e.style.display = 'none'; }
+  controls.autoRotate = true; controls.autoRotateSpeed = 0.5;
+  const a = document.createElement('a'); a.href = location.origin + location.pathname; a.target = '_blank'; a.rel = 'noopener';
+  a.style.cssText = 'position:fixed;left:50%;bottom:14px;transform:translateX(-50%);padding:9px 16px;border-radius:99px;background:rgba(10,14,26,.62);backdrop-filter:blur(10px);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;letter-spacing:.06em;border:1px solid rgba(255,255,255,.25)';
+  a.textContent = 'Neverend City · get your own building →'; document.body.appendChild(a);
+}
+if (params.has('studio')) { // ?studio=1: record clips of the city to a video file (WebM; see docs/CONTENT-TOOLS.md to convert to MP4)
+  const bar = document.createElement('div'); bar.style.cssText = 'position:fixed;left:8px;top:8px;z-index:50;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:12px;background:rgba(10,14,26,.8);color:#fff;font:12px system-ui,sans-serif';
+  bar.innerHTML = '<b>Studio</b><button id="sflyover">Record 20 s flyover</button><button id="slapse">Record 30 s growth time-lapse</button><button id="sstop">Stop and save</button><span id="sstat" style="opacity:.7">Resize the window first: tall and narrow = 9:16, wide = 16:9.</span>'; document.body.appendChild(bar);
+  let rec = null, chunks = [], timers = [];
+  const stat = t => { bar.querySelector('#sstat').textContent = t; };
+  const start = () => { if (rec) return false; const mime = ['video/webm;codecs=vp9', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m)); rec = new MediaRecorder(canvas.captureStream(30), { mimeType: mime, videoBitsPerSecond: 12e6 }); chunks = []; rec.ondataavailable = e => e.data.size && chunks.push(e.data); rec.onstop = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })); a.download = `neverend-city-${Date.now()}.webm`; a.click(); stat('Saved. Check your Downloads folder.'); rec = null; }; rec.start(500); return true; };
+  const stop = () => { timers.forEach(clearTimeout); timers = []; controls.autoRotate = false; if (rec) rec.stop(); };
+  bar.querySelector('#sstop').onclick = stop;
+  bar.querySelector('#sflyover').onclick = () => { if (!start()) return; stat('Recording flyover…'); $('top').style.display = $('bottom').style.display = 'none'; const s = W.S[Math.max(0, W.S.length - 1)]; flyTo(s.x, 40, s.z, 220, 6); controls.autoRotate = true; controls.autoRotateSpeed = 1.2; timers.push(setTimeout(stop, 20000)); };
+  bar.querySelector('#slapse').onclick = () => { if (!start()) return; stat('Recording time-lapse…'); $('top').style.display = $('bottom').style.display = 'none'; const total = count, t0 = performance.now(); devActive = true; setCount(Math.max(1, Math.round(total * 0.02)), { celebrateOk: false }); controls.autoRotate = true; controls.autoRotateSpeed = 0.8;
+    const tick = () => { const f = Math.min(1, (performance.now() - t0) / 30000); setCount(Math.max(1, Math.round(total * f * f)), { celebrateOk: false }); if (f < 1 && rec) timers.push(setTimeout(tick, 400)); else timers.push(setTimeout(stop, 2500)); }; tick(); };
+}
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !params.has('studio')) navigator.serviceWorker.register('sw.js').catch(() => {});
+const loadBar = n => { const i = document.querySelector('#loadbar i'); if (i) i.style.width = n + '%'; };
+
 /* ---------- go ---------- */
 window.__city = { explore, beginExplore, renderer, composer, interior, openBuilding, store, visitor, startLiveEvent, refreshVisitorFx, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
 (async () => {
   try {
+    loadBar(30);
     if (params.has('count')) { live = { instagram: Math.round(Number(params.get('count')) * 0.6), youtube: 0, total: Number(params.get('count')) }; live.youtube = live.total - live.instagram; setCount(live.total, { celebrateOk: false }); }
     else { const d = await fetchLive(); if (d) live = d; setCount(live.total, { celebrateOk: false }); }
-    requestAnimationFrame(frame); setTimeout(() => $('loading').classList.add('done'), 600);
+    loadBar(100); requestAnimationFrame(frame); setTimeout(() => $('loading').classList.add('done'), 600);
     if (visitorOn) setTimeout(() => visitor.start(), useRemote ? 1200 : 5500);
     if (!params.has('count')) setInterval(poll, POLL_MS);
   } catch (e) { $('err').style.display = 'block'; $('err').textContent = String(e); console.error(e); }

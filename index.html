@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#05070f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Neverend City</title>
 <meta name="description" content="A 3D city that grows by one building for every Instagram follower and YouTube subscriber. Claim yours.">
 <meta property="og:type" content="website">
@@ -40,7 +45,12 @@
   #dev input[type=range] { width:100%; margin:8px 0 4px; } #dev input[type=number] { width:100%; background:rgba(0,0,0,.35); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 8px; font:inherit; }
   #newest { position:fixed; left:0; top:0; transform:translate(-50%,-100%); pointer-events:none; opacity:0; transition:opacity .4s; text-align:center; font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:#d8f3ff; text-shadow:0 0 12px rgba(120,210,255,.9); white-space:nowrap; }
   #newest::after { content:""; display:block; width:1px; height:26px; margin:6px auto 0; background:linear-gradient(#9fe2ff,transparent); }
-  #loading { position:fixed; inset:0; display:grid; place-items:center; background:#05070f; color:var(--dim); letter-spacing:.4em; font-size:12px; text-transform:uppercase; transition:opacity 1.2s; }
+  #loading { position:fixed; inset:0; display:grid; place-items:center; align-content:center; gap:18px; background:#05070f; color:var(--dim); letter-spacing:.4em; font-size:12px; text-transform:uppercase; transition:opacity 1.2s; }
+  #loadbar { width:min(260px,60vw); height:4px; border-radius:99px; background:rgba(255,255,255,.12); overflow:hidden; } #loadbar i { display:block; height:100%; width:6%; background:linear-gradient(90deg,#4b8bff,#ff6bd6); transition:width .35s; }
+  body.rm *, body.rm *::before, body.rm *::after { animation-duration:.001s !important; animation-iteration-count:1 !important; transition-duration:.001s !important; }
+  :focus-visible { outline:3px solid #ffd23a; outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { body:not(.rmoff) *, body:not(.rmoff) *::before, body:not(.rmoff) *::after { animation-duration:.001s !important; transition-duration:.001s !important; } }
+  body.cb { --ig:#0072b2; --yt:#e69f00; }
   #loading.done { opacity:0; pointer-events:none; }
   #fade { position:fixed; inset:0; background:#05070f; opacity:0; pointer-events:none; transition:opacity .55s; z-index:20; }
   #fade.on { opacity:1; }
@@ -87,11 +97,20 @@
         <button id="plat" aria-pressed="false">Show by platform</button>
         <button id="fly">Fly to newest</button>
       </div>
+      <div class="pill" id="qual" role="group" aria-label="Graphics quality">
+        <button data-q="auto" class="on">Auto</button><button data-q="low">Low</button><button data-q="med">Medium</button><button data-q="high">High</button>
+      </div>
+      <div class="pill">
+        <button id="rm" aria-pressed="false">Reduce motion</button>
+        <button id="cb" aria-pressed="false">Color-blind colors</button>
+        <button id="bug">Report a bug</button>
+        <a href="help.html" target="_blank" style="color:var(--dim);font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:10px 14px;text-decoration:none">Help</a>
+      </div>
     </div>
   </div>
 </div><div id="dev"><b>Test slider (dev only)</b><input id="devr" type="range" min="0" max="1000" value="0"><input id="devn" type="number" min="0" max="100000" step="1"><button id="devev" style="margin-top:6px;width:100%">Test live event</button></div>
 <div id="fade"></div>
-<div id="loading">Building city</div>
+<div id="loading"><div>Building city</div><div id="loadbar"><i></i></div></div>
 <div id="err"></div>
 <script type="module" src="main.js"></script>
 </body>

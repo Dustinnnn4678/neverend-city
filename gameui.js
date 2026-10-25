@@ -46,6 +46,7 @@ export function injectStyles() {
 /* ---------- confetti ---------- */
 let conf = null;
 export function confetti(n = 160, origin) {
+  if (document.body.classList.contains('rm')) return;          // "Reduce motion" is on
   if (!conf) { const c = document.createElement('canvas'); c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:80'; document.body.appendChild(c); conf = { c, g: c.getContext('2d'), p: [], run: false }; }
   const { c, g } = conf, dpr = Math.min(devicePixelRatio || 1, 2); c.width = innerWidth * dpr; c.height = innerHeight * dpr;
   const ox = origin ? origin.x : innerWidth / 2, oy = origin ? origin.y : innerHeight * 0.4;
