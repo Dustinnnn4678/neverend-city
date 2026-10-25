@@ -89,3 +89,6 @@ export function nameOk(name) {
 }
 // A short human-friendly verification code visitors paste into a comment.
 export function makeCode(rand) { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = 'NC-'; for (let i = 0; i < 6; i++) s += A[Math.floor(rand() * A.length)]; return s; }
+
+/* ---------- landmark votes: options you approve for each big milestone ---------- */
+export const VOTE_OPTIONS = { 8000: ['Science museum', 'Zoo', 'Observatory'], 15000: ['Opera house', 'Aquarium', 'Space tower'], 30000: ['Giant statue', 'Crystal dome', 'Sky garden'] };

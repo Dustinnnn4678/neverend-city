@@ -33,3 +33,12 @@ insert into public.cosmetics (id, name, rarity, level, cost, source, slot) value
 insert into public.cosmetics (id, name, rarity, level, cost, source, slot) values ('skin-aurora', 'Legendary skin: Aurora', 'legendary', 4, null, 'crate', 'skin') on conflict (id) do update set name = excluded.name, rarity = excluded.rarity, level = excluded.level, cost = excluded.cost, source = excluded.source, slot = excluded.slot;
 insert into public.cosmetics (id, name, rarity, level, cost, source, slot) values ('skin-crystal', 'Legendary skin: Crystal', 'legendary', 4, null, 'crate', 'skin') on conflict (id) do update set name = excluded.name, rarity = excluded.rarity, level = excluded.level, cost = excluded.cost, source = excluded.source, slot = excluded.slot;
 insert into public.settings (key, value) values ('points', '{"daily":10,"streakStep":5,"streakMax":50,"golden":25,"verify":100,"referral":50,"prediction":200}') on conflict (key) do update set value = excluded.value;
+insert into public.vote_options (milestone, option) values (8000, 'Science museum') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (8000, 'Zoo') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (8000, 'Observatory') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (15000, 'Opera house') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (15000, 'Aquarium') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (15000, 'Space tower') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (30000, 'Giant statue') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (30000, 'Crystal dome') on conflict do nothing;
+insert into public.vote_options (milestone, option) values (30000, 'Sky garden') on conflict do nothing;

@@ -14,6 +14,7 @@ import { InteriorSystem, canEnter } from './interior.js';
 import { store } from './store.js';
 import { previewStage, statsStage, crateStage, shareStage, roofItem, labelTex } from './stages.js';
 import { Visitor } from './visitor.js';
+import { Remote, remoteConfigured } from './remote.js';
 import { Explore } from './explore.js';
 import { BUSINESSES, stageOf } from './economy.js';
 
@@ -381,7 +382,7 @@ function buildWorld(n, firstNew) {
   applyPlatform();
   fitCamera();
   updateChunks(true);
-  refreshBizFx(); refreshVisitorFx(); refreshGolden();
+  refreshBizFx(); refreshVisitorFx(); refreshGolden(); refreshClaimPlates(visitor.publicClaims);
 }
 function updateChunks(force) {
   if (!W || !W.chunked) return;
@@ -616,7 +617,7 @@ function updateFireworks(dt, now) {
 function celebrate(m) {
   if (!W || !W.S.length) return;
   const idx = clamp(UNLOCK_INDEX[m.at] ?? m.at - 1, 0, W.S.length - 1), pos = UNLOCK_POS[m.at], s = pos ? { x: pos.x, z: pos.z } : W.S[idx], now = performance.now() / 1000;
-  toast('Unlocked: ' + m.name); flyTo(s.x, 20, s.z, pos ? 260 : 150, 7); startLiveEvent(); if (demo) visitor.milestoneCrate(m);
+  toast('Unlocked: ' + m.name); flyTo(s.x, 20, s.z, pos ? 260 : 150, 7); startLiveEvent(); if (demo && !useRemote) visitor.milestoneCrate(m);
   ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b', '#ff8a6b', '#b79bff'].forEach((c, k) => fw.queue.push({ t: now + 2.2 + k * 0.7, x: s.x + (Math.random() - .5) * 60, y: 70 + Math.random() * 50, z: s.z + (Math.random() - .5) * 60, c }));
   celebrating = { s, until: now + 12 };
 }
@@ -683,6 +684,8 @@ function updateBizFx(t) {
 
 /* ---------- interiors (demo mode): click a house or shop to go inside ---------- */
 const demo = params.has('demo') || dev;
+const useRemote = remoteConfigured && (params.has('remote') || !demo), visitorOn = demo || useRemote;
+{ const ref = params.get('ref'); if (ref) { try { localStorage.setItem('nc.ref', String(ref).slice(0, 20)); } catch (e) { /* ignore */ } } }
 const fadeEl = $('fade');
 const interior = new InteriorSystem({
   renderer, renderPass, canvas, envMap: scene.environment, store, getNight: () => windowF, notify: msg => toast(msg), getModel, materials,
@@ -706,11 +709,11 @@ canvas.addEventListener('pointerup', e => {
   const d = pdown; pdown = null;
   if (!demo || !W || interior.active || entering || !d || Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 5 || performance.now() - d[2] > 350) return;
   const r = canvas.getBoundingClientRect(); pickNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); pickRay.setFromCamera(pickNdc, camera);
-  if (goldenGroup) { const gh = pickRay.intersectObjects(goldenGroup.children, false)[0]; if (gh && gh.object.userData.golden !== undefined) { const gi = gh.object.userData.golden, gs = W.S[gi]; if (visitor.findGolden(gi)) { fw.queue.push({ t: performance.now() / 1000, x: gs.x, y: gs.model.topY + 12, z: gs.z, c: '#ffd23a' }); refreshGolden(); } return; } }
+  if (goldenGroup) { const gh = pickRay.intersectObjects(goldenGroup.children, false)[0]; if (gh && gh.object.userData.golden !== undefined) { const gi = gh.object.userData.golden, gs = W.S[gi]; visitor.findGolden(gi).then(ok => { if (ok) { fw.queue.push({ t: performance.now() / 1000, x: gs.x, y: gs.model.topY + 12, z: gs.z, c: '#ffd23a' }); refreshGolden(); } }); return; } }
   const meshes = []; world.traverse(o => { if (o.isInstancedMesh && o.userData.items && visibleChain(o)) meshes.push(o); });
   const hit = pickRay.intersectObjects(meshes, false)[0]; if (!hit) return;
   const s = hit.object.userData.items[hit.instanceId]; if (!s) return;
-  if (visitor.pickMode) { visitor.pickMode = false; visitor.pending = s; visitor.open('claim'); return; }
+  if (visitor.pickMode) { if (visitor.claimedSet.has(s.i)) { toast('That building is already claimed. Pick another.'); return; } visitor.pickMode = false; visitor.pending = s; visitor.open('claim'); return; }
   if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
 });
 if (demo) setTimeout(() => toast('Demo: click a house or shop to go inside'), 4000);
@@ -723,7 +726,7 @@ let vfx = null, goldenGroup = null;
 function tintStruct(s, hex, k = 0.65) { tmpC.copy(s.base).lerp(new THREE.Color(hex), k); for (const r of s.refs) { r.mesh.setColorAt(r.slot, tmpC); r.mesh.instanceColor.needsUpdate = true; } }
 function refreshVisitorFx() {
   if (vfx) { world.remove(vfx.group); vfx.group.traverse(o => { if (o.userData.own && o.geometry) o.geometry.dispose(); }); vfx = null; }
-  if (!demo || !W) return; applyPlatform();
+  if (!visitorOn || !W) return; applyPlatform();
   const v = visitor.v, c = v && v.claim; if (!c) return; const s = W.S[c.building]; if (!s) return;
   const group = new THREE.Group(), eq = v.equipped, anim = [], top = s.model.topY, yaw = s.yaw * Math.PI / 2, fx = Math.sin(yaw), fz = Math.cos(yaw), own = o => { o.userData.own = true; return o; }; world.add(group);
   if (COLOR_HEX[eq.color]) tintStruct(s, COLOR_HEX[eq.color]);
@@ -743,9 +746,23 @@ function refreshVisitorFx() {
   sp.scale.set(10, 2.5, 1); sp.position.set(s.x, up + 4.5, s.z); sp.renderOrder = 9; sp.userData.own = true; group.add(sp);
   vfx = { group, anim, sprite: sp, base: up + 4.5 };
 }
+/* name plates for every claimed building (public data only: usernames people chose to show) */
+let plates = null; const plateTex = new Map();
+function smallPlate(text, verified) {
+  const key = text + verified; let t = plateTex.get(key); if (t) return t;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d'); g.fillStyle = 'rgba(12,16,28,.82)'; g.fillRect(0, 0, 256, 64); g.strokeStyle = verified ? '#9bffb4' : '#ffe08a'; g.lineWidth = 3; g.strokeRect(2, 2, 252, 60);
+  g.fillStyle = verified ? '#9bffb4' : '#ffe08a'; g.font = 'bold 28px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 34); t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; plateTex.set(key, t); return t;
+}
+function refreshClaimPlates(claims) {
+  if (plates) { world.remove(plates); plates = null; }
+  if (!useRemote || !W || !claims) return; const mine = visitor.v.claim ? visitor.v.claim.building : -1, g = new THREE.Group(); let n = 0; world.add(g);
+  for (const c of claims) { if (c.building === mine || n > 400) continue; const s = W.S[c.building]; if (!s) continue; n++; const ok = c.status === 'verified', text = ((c.display_name ? '@' + c.display_name : 'Builder') + (ok ? ' ✓' : '')).slice(0, 20);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smallPlate(text, ok), depthTest: false, transparent: true })); sp.scale.set(8, 2, 1); sp.position.set(s.x, s.model.topY + 4.5, s.z); sp.renderOrder = 8; g.add(sp); }
+  plates = g;
+}
 function refreshGolden() {
   if (goldenGroup) { world.remove(goldenGroup); goldenGroup.traverse(o => { if (o.userData.own && o.geometry) o.geometry.dispose(); }); goldenGroup = null; }
-  if (!demo || !W || !W.S.length) return;
+  if (!visitorOn || !W || !W.S.length) return;
   const g = new THREE.Group(); world.add(g);
   visitor.goldenToday(W.S.length).forEach(i => {
     if (visitor.isFound(i)) return; const s = W.S[i], star = new THREE.Mesh(new THREE.OctahedronGeometry(1.6, 0), new THREE.MeshStandardMaterial({ color: 0xffc400, emissive: 0xffa000, emissiveIntensity: 2.4, metalness: 0.8, roughness: 0.25 }));
@@ -760,23 +777,23 @@ function updateVisitorFx(t, now) {
 function locateGoldenStar(i) { const s = W && W.S[i]; if (!s) return; flyTo(s.x, s.model.topY + 4, s.z, 70, 5); toast('Look for the spinning gold star!'); }
 function overlayStage(fn) { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on'); setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; fn(); fadeEl.classList.remove('on'); entering = false; }, 600); }
 const visitor = new Visitor({
-  store, notify: msg => toast(msg), applyFx: () => refreshVisitorFx(),
+  store, remote: useRemote ? new Remote() : null, notify: msg => toast(msg), applyFx: () => refreshVisitorFx(), onClaims: c => refreshClaimPlates(c), onEvent: ms => { if (ms && Date.now() - ms < 600000 && !liveEv) startLiveEvent(ms); },
   getCtx: () => ({ W, count, next: nextMilestone(count), fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => overlayStage(() => shareStage(interior, W.S[i], visitor.v.claim, location.host + location.pathname.replace(/\/$/, ''))) }),
   showCrate: res => overlayStage(() => crateStage(interior, res, () => { const r = visitor.openOne(); if (r) crateStage(interior, r, () => {}); })),
   locateGolden: locateGoldenStar,
 });
 $('devev').addEventListener('click', () => startLiveEvent());
-if (demo) { const hb = $('hubbtn'); hb.style.display = ''; hb.addEventListener('click', () => visitor.open()); visitor.refreshBadge(); }
+if (visitorOn) { const hb = $('hubbtn'); hb.style.display = ''; hb.addEventListener('click', () => visitor.open()); visitor.refreshBadge(); }
 
 /* ---------- live milestone event: 10 minutes of fireworks, a parade of cars, sweeping spotlights, double points ---------- */
 let liveEv = null;
-function startLiveEvent() {
-  if (liveEv || !W) return; const now = performance.now() / 1000; visitor.startEvent();
+function startLiveEvent(startMs) {
+  if (liveEv || !W) return; const now = performance.now() / 1000; visitor.startEvent(); const leftSec = startMs ? Math.max(5, 600 - (Date.now() - startMs) / 1000) : 600;
   const R = Math.min(W.extent * 0.8, 600), beams = [], cars = instanced(carGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.6 }), 14, 'parade');
   const pal = ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b', '#ff8a6b', '#b79bff']; for (let i = 0; i < 14; i++) cars.setColorAt(i, tmpC.set(pal[i % 6]).multiplyScalar(1.3)); cars.instanceColor.needsUpdate = true; cars.castShadow = true;
   for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 11, 520, 24, 1, true).translate(0, 260, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.1 + i * 0.3, 0.8, 0.7), transparent: true, opacity: 0.11, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })); b.frustumCulled = false; scene.add(b); beams.push(b); }
   const pts = [[-P * 1.5 + 2.4, -P * 1.5 + 2.4], [P * 1.5 - 2.4 + 0, -P * 1.5 + 2.4], [P * 1.5 - 2.4, P * 1.5 - 2.4], [-P * 1.5 + 2.4, P * 1.5 - 2.4]].map(([a, b]) => [a + P / 2 - P / 2, b]), lens = [3 * P, 3 * P, 3 * P, 3 * P];
-  liveEv = { until: now + 600, nextFw: now, cars, beams, R, pts, lens, tot: 12 * P }; $('evbanner').style.display = 'block'; toast('LIVE EVENT: double points for 10 minutes!');
+  liveEv = { until: now + leftSec, nextFw: now, cars, beams, R, pts, lens, tot: 12 * P }; $('evbanner').style.display = 'block'; toast('LIVE EVENT: double points for 10 minutes!');
 }
 function updateLiveEvent(now) {
   if (!liveEv) return; const left = liveEv.until - now;
@@ -851,7 +868,7 @@ window.__city = { explore, beginExplore, renderer, composer, interior, openBuild
     if (params.has('count')) { live = { instagram: Math.round(Number(params.get('count')) * 0.6), youtube: 0, total: Number(params.get('count')) }; live.youtube = live.total - live.instagram; setCount(live.total, { celebrateOk: false }); }
     else { const d = await fetchLive(); if (d) live = d; setCount(live.total, { celebrateOk: false }); }
     requestAnimationFrame(frame); setTimeout(() => $('loading').classList.add('done'), 600);
-    if (demo) setTimeout(() => visitor.dailyVisit(), 5500);
+    if (visitorOn) setTimeout(() => visitor.start(), useRemote ? 1200 : 5500);
     if (!params.has('count')) setInterval(poll, POLL_MS);
   } catch (e) { $('err').style.display = 'block'; $('err').textContent = String(e); console.error(e); }
 })();
