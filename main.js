@@ -187,7 +187,7 @@ const tmpM2 = new THREE.Matrix4(), tmpE = new THREE.Euler();
 const PAD_OF = { house: s => s.i < 250 ? 'yard' : 'lawn', townhome: 'plaza', apartment: 'lawn', store: 'parking', gas: 'parking', shop: 'parking', diner: 'parking', mall: 'parking', garage: 'plaza', office: 'plaza',
   warehouse: 'concrete', watertower: 'concrete', school: 'lawn', church: 'lawn', library: 'plaza', fire: 'plaza', police: 'plaza', clinic: 'plaza', post: 'plaza', hospital: 'parking', park: 'park', green: 'lawn',
   windmill: 'lawn', clocktower: 'plaza', cityhall: 'plaza', cinema: 'parking', bank: 'plaza', hotel: 'plaza', observation: 'plaza',
-  skyscraper: 'plaza', stadium: 'plaza', campus: 'lawn', amusement: 'plaza', megatower: 'plaza', monument: 'plaza' };
+  skyscraper: 'plaza', stadium: 'plaza', campus: 'lawn', amusement: 'plaza', megatower: 'plaza', monument: 'plaza', powerplant: 'concrete', celltower: 'concrete' };
 const TOWER_TINT = ['#ffffff', '#9fd0ff', '#8fe0d0', '#ffd7a0', '#d8c8ff', '#ffb8b0', '#b5ffd0', '#c8d4e8'];
 const PASTEL = ['#f4f1ea', '#ead9c0', '#d6e3ee', '#ecd0cd', '#d9e6d3', '#efe3b8', '#c9cfd6', '#d8c3a8'];
 const lampMat = new THREE.MeshBasicMaterial({ color: 0x000000 }), tlMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -333,6 +333,13 @@ function buildWorld(n, firstNew) {
   if (sailList.length) rotorMesh.sail = instanced(sailGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), sailList.length, 'sails');
   if (wheelList.length) { rotorMesh.wheel = instanced(wheelGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 }), wheelList.length, 'wheels'); rotorMesh.wheel.castShadow = true; }
 
+  /* smoke from the power plant */
+  const plants = S.filter(s => s.type === 'powerplant'); let smoke = null;
+  if (plants.length) {
+    const em = plants.flatMap(s => s.model.smoke.map(e => ({ s, e }))), PER = 9;
+    smoke = { em, PER, mesh: instanced(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0xdfe2e6, transparent: true, opacity: 0.5, depthWrite: false, roughness: 1 }), em.length * PER, 'smoke') };
+  }
+
   /* street lamps */
   if (paved) {
     const lamps = []; for (let bx = -ringB - 1; bx <= ringB + 1; bx++) for (let bz = -ringB - 1; bz <= ringB + 1; bz++) { if (skipDecor(bx, bz)) continue; for (const s1 of [-1, 1]) for (const o of [-8, 8]) {
@@ -362,7 +369,7 @@ function buildWorld(n, firstNew) {
   /* infrastructure: river, bridges, highway, rail, airport, harbor */
   const infra = buildInfra(n, { R, materials, lampMat, carGeo, getWindowF: () => windowF }); world.add(infra.group);
 
-  W = { n, city, S, R, paved, crosswalks, anims, tl, glow, igShare, rotors: { sailList, wheelList, ...rotorMesh }, chunks, chunked, infra, extent: Math.max(R * P + 60, n >= SITES.airport.at ? 760 : 0) };
+  W = { n, city, S, R, paved, crosswalks, anims, tl, glow, igShare, smoke, rotors: { sailList, wheelList, ...rotorMesh }, chunks, chunked, infra, extent: Math.max(S.reduce((m, s) => Math.max(m, Math.hypot(s.x, s.z)), 0) + 70, n >= SITES.airport.at ? 760 : 0) };
   initAgents();
   applyPlatform();
   fitCamera();
@@ -443,6 +450,12 @@ function updateAmbient(t) {
   planeG.visible = W.n >= T.downtown; if (planeG.visible) { const f = (t % 90) / 90; planeG.position.set(-2800 + f * 5600, 340 + Math.sin(t * 0.2) * 8, -650); planeG.userData.strobe.visible = Math.sin(t * 9) > 0.6; }
   const spin = (list, mesh, speed) => { if (!mesh) return; list.forEach((s, i) => { tmpQ.setFromAxisAngle(UP, s.yaw * Math.PI / 2); mA.compose(tmpP.set(s.x, 0, s.z), tmpQ, tmpS.set(1, 1, 1)); const h = s.model.hub; mB.makeTranslation(h[0], h[1], h[2]); mC.makeRotationZ(t * speed); mesh.setMatrixAt(i, mA.multiply(mB).multiply(mC)); }); mesh.instanceMatrix.needsUpdate = true; };
   spin(W.rotors.sailList, W.rotors.sail, 0.7); spin(W.rotors.wheelList, W.rotors.wheel, -0.12);
+  if (W.smoke) {
+    const { em, PER, mesh } = W.smoke;
+    em.forEach(({ s, e }, i) => { const c = Math.cos(s.yaw * Math.PI / 2), sn = Math.sin(s.yaw * Math.PI / 2), ex = s.x + e[0] * c + e[2] * sn, ez = s.z - e[0] * sn + e[2] * c;
+      for (let k = 0; k < PER; k++) { const u = (t * 0.1 + k / PER + i * 0.31) % 1; setPos(mesh, i * PER + k, ex + u * 26, e[1] + u * 55, ez + u * 9, 0, 1.6 + u * 7); } });
+    mesh.instanceMatrix.needsUpdate = true;
+  }
 }
 function updateAgents(dt, t) {
   if (!W) return;
@@ -493,6 +506,31 @@ function updateAgents(dt, t) {
   }
 }
 
+/* ---------- weather: rain comes and goes ---------- */
+const rain = { level: 0, target: 0, manual: false, nextAt: 300 + Math.random() * 120 };
+let rainL = 0, fogBase = 0.0007;
+const rainGray = new THREE.Color(0x7d8794), RN = isMobile ? 2500 : 5000, rainGeo = new THREE.BufferGeometry(), rainPos = new Float32Array(RN * 6), rainOff = new Float32Array(RN * 3);
+for (let i = 0; i < RN; i++) { rainOff[i * 3] = (Math.random() - .5) * 460; rainOff[i * 3 + 1] = Math.random() * 220; rainOff[i * 3 + 2] = (Math.random() - .5) * 460; }
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rainMat = new THREE.LineBasicMaterial({ color: 0xc4d6ea, transparent: true, opacity: 0, depthWrite: false, fog: false });
+const rainLines = new THREE.LineSegments(rainGeo, rainMat); rainLines.frustumCulled = false; rainLines.visible = false; scene.add(rainLines);
+function updateRain(dt, now) {
+  if (mode === 'auto' && !rain.manual && now > rain.nextAt) {
+    if (rain.target > 0) { rain.target = 0; rain.nextAt = now + 120 + Math.random() * 180; }
+    else if (Math.random() < 0.5) { rain.target = 0.6 + Math.random() * 0.4; rain.nextAt = now + 50 + Math.random() * 60; } else rain.nextAt = now + 90 + Math.random() * 90;
+  }
+  rain.level += (rain.target - rain.level) * Math.min(1, dt * 0.5); rainL = rain.level < 0.01 ? 0 : rain.level;
+  scene.fog.density = fogBase * (1 + 1.4 * rainL);
+  rainLines.visible = rainL > 0; if (!rainLines.visible) return;
+  rainMat.opacity = 0.5 * rainL; rainLines.position.set(controls.target.x, 0, controls.target.z);
+  for (let i = 0; i < RN; i++) {
+    let y = rainOff[i * 3 + 1] - 95 * dt; if (y < 0) { y += 220; rainOff[i * 3] = (Math.random() - .5) * 460; rainOff[i * 3 + 2] = (Math.random() - .5) * 460; } rainOff[i * 3 + 1] = y;
+    const x = rainOff[i * 3], z = rainOff[i * 3 + 2], j = i * 6; rainPos[j] = x; rainPos[j + 1] = y; rainPos[j + 2] = z; rainPos[j + 3] = x + 1.2; rainPos[j + 4] = y - 4.5; rainPos[j + 5] = z + 0.4;
+  }
+  rainGeo.attributes.position.needsUpdate = true;
+}
+$('rain').addEventListener('click', e => { rain.manual = true; rain.target = rain.target > 0 ? 0 : 0.95; e.target.classList.toggle('on', rain.target > 0); e.target.setAttribute('aria-pressed', rain.target > 0); });
+
 /* ---------- time of day ---------- */
 let mode = 'auto', tDay = 0.4, tTarget = 0.4, windowF = 0;
 const dayFog = new THREE.Color(0x9fbfe6), duskFog = new THREE.Color(0xe3a77c), nightFog = new THREE.Color(0x070b18), fogCol = new THREE.Color();
@@ -504,10 +542,11 @@ function applyTime(t) {
   nightDome.material.uniforms.opacity.value = nightF; stars.material.opacity = smooth(-0.02, -0.2, elev) * 0.95;
   md.set(-sunDir.x * .6 + .15, Math.max(-elev, 0) * .85 + .05, -sunDir.z * .8).normalize();
   moon.position.copy(md).multiplyScalar(14000); moon.lookAt(0, 0, 0); moon.material.opacity = smooth(0.02, -0.16, elev);
-  sun.color.copy(sunWarm).lerp(sunWhite, smooth(0.05, 0.45, elev)); sun.intensity = 3.4 * smooth(0.0, 0.2, elev); moonLight.intensity = 0.55 * nightF;
+  sun.color.copy(sunWarm).lerp(sunWhite, smooth(0.05, 0.45, elev)); sun.intensity = 3.4 * smooth(0.0, 0.2, elev) * (1 - 0.65 * rainL); moonLight.intensity = 0.55 * nightF;
   moonLight.position.copy(md).multiplyScalar(1000).add(controls.target);
   hemi.intensity = lerp(0.07, 0.55, dayF); hemi.color.set(0x9ec5ff).lerp(tmpC.set(0x1a2a55), nightF); scene.environmentIntensity = lerp(0.04, 1.3, dayF);
-  fogCol.copy(dayFog).lerp(duskFog, clamp(dusk, 0, 1)).lerp(nightFog, nightF); scene.fog.color.copy(fogCol);
+  fogCol.copy(dayFog).lerp(duskFog, clamp(dusk, 0, 1)).lerp(nightFog, nightF); scene.fog.color.copy(fogCol).lerp(rainGray, 0.5 * rainL * (1 - nightF * 0.7));
+  for (const k of ['paved', 'inter', 'cross']) roadTex[k].roughness = lerp(0.88, 0.3, rainL);
   renderer.toneMappingExposure = lerp(0.95, 0.42, dayF) * (1 + dusk * 0.15);
   windowF = smooth(0.14, -0.1, elev);
   for (const k of ['glass', 'concrete', 'brick', 'siding', 'shop', 'metal']) materials[k].emissiveIntensity = 1.05 * windowF;
@@ -524,11 +563,11 @@ document.querySelectorAll('#tod button').forEach(btn => btn.addEventListener('cl
 let desiredDist = 300, introT = 0, fly = null;
 function fitCamera() {
   const R = W.extent, asp = innerWidth / innerHeight;
-  desiredDist = clamp(R * 1.0 + 130, 230, 9000) * (asp < 1 ? Math.pow(1 / asp, 0.95) : 1);
+  desiredDist = clamp(R * 0.95 + 110, 150, 9000) * (asp < 1 ? Math.pow(1 / asp, 0.8) : 1);
   controls.maxDistance = desiredDist * 3;
   if (!fly) controls.target.set(0, clamp(R * 0.1, 18, 70), 0);
   const sc = clamp(R * 1.1 + 100, 200, 900), cam = sun.shadow.camera; cam.left = cam.bottom = -sc; cam.right = cam.top = sc; cam.updateProjectionMatrix();
-  scene.fog.density = 0.55 / desiredDist;
+  fogBase = 0.55 / desiredDist;
 }
 function flyTo(x, y, z, dist, hold = 4.5) {
   const off = camera.position.clone().sub(controls.target), sph = new THREE.Spherical().setFromVector3(off);
@@ -620,7 +659,7 @@ function frame(nowMs) {
   requestAnimationFrame(frame); if (hidden || !W) return;
   const dt = Math.min((nowMs - last) / 1000, 0.1); last = nowMs; const now = nowMs / 1000;
   if (mode === 'auto') { tDay = (tDay + dt / DAY_SECONDS) % 1; tTarget = tDay; } else { const diff = ((tTarget - tDay + 1.5) % 1) - 0.5; tDay = (tDay + diff * Math.min(1, dt * 1.6) + 1) % 1; }
-  applyTime(tDay);
+  updateRain(dt, now); applyTime(tDay);
   if (!fly) {
     const off = camera.position.clone().sub(controls.target), sph = new THREE.Spherical().setFromVector3(off); introT = Math.min(introT + dt / 6, 1); const k = easeOut(introT);
     if (introT < 1 && !userTouched) { sph.radius = lerp(desiredDist * 1.9, desiredDist, k); sph.phi = lerp(0.62, 1.15, k); } else if (!userTouched) sph.radius += (desiredDist - sph.radius) * Math.min(1, dt * 0.8);

@@ -112,8 +112,8 @@ class Builder {
     this.push(mat, g, color); return this;
   }
   lathe(pts, color, o = {}) {
-    const { seg = 48, mat = 'paint2' } = o, g = new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p[0], p[1])), seg);
-    this.push(mat, g, color); return this;
+    const { seg = 48, mat = 'paint2', x = 0, y0 = 0, z = 0 } = o, g = new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p[0], p[1])), seg);
+    g.translate(x, y0, z); this.push(mat, g, color); return this;
   }
   tube(curve, radius, color, o = {}) {
     const g = new THREE.TubeGeometry(curve, o.seg || 240, radius, 6, true); this.push('paint', g, color); return this;
@@ -261,6 +261,18 @@ const BUILD = {
     b.gable(4.6, 4.6, 1.4, 2.8, { x: -3, z: 4, color: PAINT.white });
   },
   green() {},
+  celltower(b, r) {
+    b.cyl('paint', 0.22, 1.5, 34, { seg: 4, color: '#c8ccd2' }).box('concrete', 3, 2.6, 3, { x: 3.6, z: 3.4 }).box('paint', 3.4, 0.3, 3.4, { x: 3.6, y0: 2.6, z: 3.4, color: PAINT.gray });
+    for (const y of [20, 26, 31]) for (const s of [-1, 1]) b.box('paint', 0.5, 2.6, 0.3, { x: s * 1.1, y0: y, z: 0.9, color: '#eceef2' }).box('paint', 0.5, 2.6, 0.3, { x: s * 0.9, y0: y, z: -1.0, color: '#eceef2' });
+    b.box('sign', 0.5, 0.5, 0.5, { y0: 34, color: '#ff4a3a' }); b.box('paint', 11, 0.1, 11, { y0: 0, color: '#5a5e63' });
+  },
+  powerplant(b, r) {
+    b.box('metal', 9.6, 8.4, 7, { z: -2.6 }).box('paint', 9.8, 0.4, 7.2, { y0: 8.4, z: -2.6, color: PAINT.gray }).box('paint', 4, 1.2, 3, { x: 4.4, z: 5, color: '#7a7f86' }).box('paint', 3, 2.6, 2, { x: -3.8, z: 4.8, color: '#4a5058' });
+    for (const x of [-4.2, -1.4]) { b.cyl('paint', 1.35, 1.6, 12, { x, z: -5, color: '#eceef2', seg: 14 }).cyl('paint', 1.15, 1.35, 12, { x, z: -5, y0: 12, color: '#c0392b', seg: 14 }).cyl('paint', 1.0, 1.15, 12, { x, z: -5, y0: 24, color: '#eceef2', seg: 14 }); }
+    b.lathe([[4.2, 0], [3.9, 6], [3.2, 12], [2.9, 16], [3.2, 20], [3.6, 24]], '#cfd2d8', { x: 3.2, z: 0.8 });
+    b.box('sign', 0.6, 0.6, 0.6, { x: -4.2, y0: 36, z: -5, color: '#ff4a3a' });
+    return { smoke: [[3.2, 24, 0.8], [-4.2, 36, -5], [-1.4, 36, -5]] };
+  },
   windmill(b) {
     b.cyl('brick', 2.2, 3.4, 11, { seg: 16 }).cyl('roof', 0, 3.0, 3.2, { y0: 11, seg: 16 }).cyl('paint', 3.5, 3.5, 0.3, { y0: 5, seg: 16, color: PAINT.gray });
     b.box('paint', 1.2, 2.2, 0.15, { z: 3.35, color: '#4a2a22' }).box('paint', 0.9, 0.9, 1.4, { y0: 10.5, z: 2.3, color: PAINT.dark }).box('siding', 4, CELL_H, 4, { x: 4.5, z: -3.5 }).gable(4, 4, 1.8, CELL_H, { x: 4.5, z: -3.5 });
@@ -382,7 +394,7 @@ export function getModel(s) {
   let m = cache.get(key);
   if (!m) {
     const b = new Builder(), r = mulberry32(key.split('').reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7)), extra = BUILD[s.type](b, r, s) || {};
-    m = { key, ...b.finish(), glow: !!extra.glow, hub: extra.hub }; cache.set(key, m);
+    m = { key, ...b.finish(), glow: !!extra.glow, hub: extra.hub, smoke: extra.smoke }; cache.set(key, m);
   }
   return m;
 }

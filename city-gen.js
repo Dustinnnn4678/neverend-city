@@ -26,7 +26,7 @@ export const MILESTONES = [
 const ZONE = {
   house: 'res', townhome: 'res', apartment: 'res',
   gas: 'com', store: 'com', shop: 'com', diner: 'com', office: 'com', mall: 'com', garage: 'com',
-  warehouse: 'ind', watertower: 'ind',
+  warehouse: 'ind', watertower: 'ind', powerplant: 'ind', celltower: 'ind',
   school: 'civ', fire: 'civ', police: 'civ', clinic: 'civ', post: 'civ', hospital: 'civ', church: 'civ', library: 'civ', clocktower: 'civ', cityhall: 'civ',
   cinema: 'com', bank: 'com', hotel: 'com', observation: 'com', windmill: 'park', skyscraper: 'com', stadium: 'civ', campus: 'civ', amusement: 'park', megatower: 'com', monument: 'park',
   park: 'park', green: 'park',
@@ -41,6 +41,7 @@ const FORCED = new Map([
   [99, 'fire'], [100, 'police'], [101, 'clinic'], [102, 'post'], [103, 'cityhall'],
   [199, 'apartment'], [200, 'townhome'], [201, 'apartment'], [202, 'hotel'],
   [399, 'office'], [400, 'mall'], [401, 'hospital'], [402, 'garage'], [403, 'observation'], [404, 'office'],
+  [1199, 'powerplant'],
   [3999, 'stadium'], [7999, 'campus'], [8000, 'amusement'], [14999, 'megatower'], [29999, 'monument'],
 ]);
 // Which structure index "owns" each milestone (for fly-to celebrations).
@@ -185,7 +186,7 @@ export function genCity(N) {
       if (n >= T.downtown && c('mall') < 1 + n / 700) opts.push(['mall', 0.15]);
       return weighted(opts, rng);
     }
-    if (zone === 'ind') return c('watertower') < 1 + n / 500 && rng() < 0.08 ? 'watertower' : 'warehouse';
+    if (zone === 'ind') { if (n >= T.services && c('celltower') < 1 + n / 60 && rng() < 0.12) return 'celltower'; return c('watertower') < 1 + n / 500 && rng() < 0.08 ? 'watertower' : 'warehouse'; }
     if (zone === 'civ') {
       const S2 = T.services, want = [['school', 1 + Math.floor(n / 90)], ['fire', n >= S2 ? 1 + Math.floor(n / 130) : 0], ['police', n >= S2 ? 1 + Math.floor(n / 150) : 0],
         ['clinic', n >= S2 ? 1 + Math.floor(n / 100) : 0], ['post', n >= S2 ? 1 + Math.floor(n / 120) : 0], ['hospital', n >= T.downtown ? 1 + Math.floor(n / 1200) : 0],
