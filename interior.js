@@ -40,7 +40,7 @@ function makeFurniture(id, seed = 0) {
 }
 
 /* ---------- animated people (stylized) ---------- */
-function makePerson(shirt, skin = '#e0b48a', pants = '#2a3446') {
+export function makePerson(shirt, skin = '#e0b48a', pants = '#2a3446') {
   const g = new THREE.Group(), s = M(shirt, 0.7), sk = M(skin, 0.7), p = M(pants, 0.8);
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.5, 4, 8), s); torso.position.y = 1.1; torso.castShadow = true;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), sk); head.position.y = 1.62; head.castShadow = true;
@@ -49,7 +49,7 @@ function makePerson(shirt, skin = '#e0b48a', pants = '#2a3446') {
   g.add(torso, head, legL, legR, armL, armR); g.userData = { legL, legR, armL, armR, torso, phase: Math.random() * 6 };
   return g;
 }
-function pose(p, walking, sit, t, amp = 0.7) {
+export function pose(p, walking, sit, t, amp = 0.7) {
   const u = p.userData, sw = walking ? Math.sin(t * 7 + u.phase) * amp : 0;
   u.legL.rotation.x = sit ? -1.45 : sw; u.legR.rotation.x = sit ? -1.45 : -sw; u.armL.rotation.x = walking ? -sw : (sit ? -0.5 : Math.sin(t * 1.2 + u.phase) * 0.05); u.armR.rotation.x = walking ? sw : (sit ? -0.5 : 0);
   u.torso.position.y = 1.1 + (walking ? Math.abs(Math.sin(t * 7 + u.phase)) * 0.04 : 0);

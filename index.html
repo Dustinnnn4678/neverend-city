@@ -57,6 +57,7 @@
       <div class="chip"><span class="dot yt"></span><span>YouTube <b id="ytc">0</b></span></div>
     </div>
     <div id="prog"><div id="bar"><div id="fill"></div></div><div id="next"></div></div>
+    <div id="evbanner" style="display:none;margin:8px auto 0;padding:7px 14px;border-radius:99px;background:linear-gradient(90deg,#ff6bd6,#ffb020);color:#1a1020;font-size:12px;font-weight:700;letter-spacing:.12em;width:max-content;max-width:92vw"></div>
     <div id="toast"></div>
   </div>
   <div id="bottom">
@@ -64,6 +65,8 @@
       <button data-mode="auto" class="on">Auto</button><button data-mode="day">Day</button><button data-mode="night">Night</button>
     </div>
     <div class="pill">
+      <button id="explore">Explore</button>
+      <button id="hubbtn" style="display:none">My hub</button>
       <button id="stats" style="display:none">My stats</button>
       <button id="rain" aria-pressed="false">Rain</button>
       <button id="plat" aria-pressed="false">Show by platform</button>
@@ -71,7 +74,7 @@
     </div>
   </div>
 </div>
-<div id="dev"><b>Test slider (dev only)</b><input id="devr" type="range" min="0" max="1000" value="0"><input id="devn" type="number" min="0" max="100000" step="1"></div>
+<div id="dev"><b>Test slider (dev only)</b><input id="devr" type="range" min="0" max="1000" value="0"><input id="devn" type="number" min="0" max="100000" step="1"><button id="devev" style="margin-top:6px;width:100%">Test live event</button></div>
 <div id="fade"></div>
 <div id="loading">Building city</div>
 <div id="err"></div>

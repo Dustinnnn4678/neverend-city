@@ -12,7 +12,9 @@ import { makeMaterials, getModel } from './models.js';
 import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } from './infra.js';
 import { InteriorSystem, canEnter } from './interior.js';
 import { store } from './store.js';
-import { previewStage, statsStage } from './stages.js';
+import { previewStage, statsStage, crateStage, roofItem, labelTex } from './stages.js';
+import { Visitor } from './visitor.js';
+import { Explore } from './explore.js';
 import { BUSINESSES, stageOf } from './economy.js';
 
 /* ---------- basics ---------- */
@@ -379,7 +381,7 @@ function buildWorld(n, firstNew) {
   applyPlatform();
   fitCamera();
   updateChunks(true);
-  refreshBizFx();
+  refreshBizFx(); refreshVisitorFx(); refreshGolden();
 }
 function updateChunks(force) {
   if (!W || !W.chunked) return;
@@ -614,7 +616,7 @@ function updateFireworks(dt, now) {
 function celebrate(m) {
   if (!W || !W.S.length) return;
   const idx = clamp(UNLOCK_INDEX[m.at] ?? m.at - 1, 0, W.S.length - 1), pos = UNLOCK_POS[m.at], s = pos ? { x: pos.x, z: pos.z } : W.S[idx], now = performance.now() / 1000;
-  toast('Unlocked: ' + m.name); flyTo(s.x, 20, s.z, pos ? 260 : 150, 7);
+  toast('Unlocked: ' + m.name); flyTo(s.x, 20, s.z, pos ? 260 : 150, 7); startLiveEvent(); if (demo) visitor.milestoneCrate(m);
   ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b', '#ff8a6b', '#b79bff'].forEach((c, k) => fw.queue.push({ t: now + 2.2 + k * 0.7, x: s.x + (Math.random() - .5) * 60, y: 70 + Math.random() * 50, z: s.z + (Math.random() - .5) * 60, c }));
   celebrating = { s, until: now + 12 };
 }
@@ -704,15 +706,100 @@ canvas.addEventListener('pointerup', e => {
   const d = pdown; pdown = null;
   if (!demo || !W || interior.active || entering || !d || Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 5 || performance.now() - d[2] > 350) return;
   const r = canvas.getBoundingClientRect(); pickNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); pickRay.setFromCamera(pickNdc, camera);
+  if (goldenGroup) { const gh = pickRay.intersectObjects(goldenGroup.children, false)[0]; if (gh && gh.object.userData.golden !== undefined) { const gi = gh.object.userData.golden, gs = W.S[gi]; if (visitor.findGolden(gi)) { fw.queue.push({ t: performance.now() / 1000, x: gs.x, y: gs.model.topY + 12, z: gs.z, c: '#ffd23a' }); refreshGolden(); } return; } }
   const meshes = []; world.traverse(o => { if (o.isInstancedMesh && o.userData.items && visibleChain(o)) meshes.push(o); });
   const hit = pickRay.intersectObjects(meshes, false)[0]; if (!hit) return;
   const s = hit.object.userData.items[hit.instanceId]; if (!s) return;
+  if (visitor.pickMode) { visitor.pickMode = false; visitor.pending = s; visitor.open('claim'); return; }
   if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
 });
 if (demo) setTimeout(() => toast('Demo: click a house or shop to go inside'), 4000);
 if (demo) { const sb = $('stats'); sb.style.display = ''; sb.addEventListener('click', () => { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on');
   setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; statsStage(interior); fadeEl.classList.remove('on'); entering = false; }, 600); }); }
 
+/* ---------- visitor features (Phase 3, demo mode): name plates, cosmetics, golden stars, crates, live events ---------- */
+const COLOR_HEX = { 'color-cream': '#f2e6c8', 'color-sky': '#9fd0ff', 'color-rose': '#ffb3c7', 'color-mint': '#a8e6c3', 'color-lilac': '#cdb8ff', 'color-sunset': '#ffb36b', 'color-gold': '#ffcc33' };
+let vfx = null, goldenGroup = null;
+function tintStruct(s, hex, k = 0.65) { tmpC.copy(s.base).lerp(new THREE.Color(hex), k); for (const r of s.refs) { r.mesh.setColorAt(r.slot, tmpC); r.mesh.instanceColor.needsUpdate = true; } }
+function refreshVisitorFx() {
+  if (vfx) { world.remove(vfx.group); vfx.group.traverse(o => { if (o.userData.own && o.geometry) o.geometry.dispose(); }); vfx = null; }
+  if (!demo || !W) return; applyPlatform();
+  const v = visitor.v, c = v && v.claim; if (!c) return; const s = W.S[c.building]; if (!s) return;
+  const group = new THREE.Group(), eq = v.equipped, anim = [], top = s.model.topY, yaw = s.yaw * Math.PI / 2, fx = Math.sin(yaw), fz = Math.cos(yaw), own = o => { o.userData.own = true; return o; }; world.add(group);
+  if (COLOR_HEX[eq.color]) tintStruct(s, COLOR_HEX[eq.color]);
+  if (eq.skin === 'skin-aurora') anim.push(t => tintStruct(s, '#' + new THREE.Color().setHSL((t * 0.08) % 1, 0.7, 0.62).getHexString(), 0.7));
+  if (eq.skin === 'skin-crystal') tintStruct(s, '#8fe8ff', 0.75);
+  let up = top;
+  const rk = { 'roof-antenna': 'antenna', 'roof-garden': 'garden', 'roof-satellite': 'dish' }[eq.roof];
+  if (rk) { const r = roofItem(rk); r.position.set(s.x, top, s.z); group.add(r); up = top + (rk === 'antenna' ? 9 : 2); }
+  if (eq.roof === 'roof-helipad') { const h = own(new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.3, 32), new THREE.MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.8 }))); h.position.set(s.x, top + 0.2, s.z); const hh = own(new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 0.5), new THREE.MeshBasicMaterial({ color: 0xffffff }))); hh.position.set(s.x, top + 0.38, s.z); group.add(h, hh); up = top + 1; }
+  if (eq.roof === 'roof-billboard') { const b = own(new THREE.Mesh(new THREE.BoxGeometry(7, 2.4, 0.3), new THREE.MeshBasicMaterial({ map: labelTex(c.optIn ? '@' + c.username : 'Verified owner', '#12151f', '#ffd23a', true), toneMapped: false }))); b.position.set(s.x, top + 3.2, s.z); b.rotation.y = yaw; const p = own(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 3, 6), new THREE.MeshStandardMaterial({ color: 0x555a62 }))); p.position.set(s.x, top + 1.5, s.z); group.add(b, p); up = top + 5; }
+  if (eq.neon) { const nc = eq.neon === 'neon-cyan' ? '#33e0ff' : '#ff4fd8', n = own(new THREE.Mesh(new THREE.BoxGeometry(7, 1.2, 0.25), new THREE.MeshBasicMaterial({ map: labelTex(c.optIn ? '@' + c.username : 'NEVEREND', '#05060c', nc, true), toneMapped: false }))); n.material.color.setScalar(1.8); n.position.set(s.x + fx * 6.9, Math.min(top * 0.55, 7), s.z + fz * 6.9); n.rotation.y = yaw; group.add(n); }
+  if (eq.glow) { const g = own(new THREE.Mesh(new THREE.BoxGeometry(11.4, top, 11.4), new THREE.MeshBasicMaterial({ color: eq.glow === 'glow-anim' ? 0x66ddff : 0xffb45a, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false }))); g.position.set(s.x, top / 2, s.z); group.add(g); anim.push(t => { g.material.opacity = 0.1 + 0.07 * Math.sin(t * (eq.glow === 'glow-anim' ? 3 : 1)); if (eq.glow === 'glow-anim') g.material.color.setHSL((t * 0.1) % 1, 0.8, 0.6); }); }
+  if (eq.fx === 'fx-halo') { const h = own(new THREE.Mesh(new THREE.TorusGeometry(9, 0.2, 8, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.6, 2.4) }))); h.rotation.x = Math.PI / 2; group.add(h); anim.push(t => { h.position.set(s.x, up + 5 + Math.sin(t * 2), s.z); h.rotation.z = t * 0.8; }); }
+  if (eq.fx === 'fx-fireworks') { let next = 0; anim.push((t, now) => { if (now > next) { next = now + 4 + Math.random() * 2; fw.queue.push({ t: now, x: s.x, y: up + 22, z: s.z, c: ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b'][Math.floor(Math.random() * 4)] }); } }); }
+  const plate = eq.plate, st = c.status === 'verified', txt = (c.optIn ? '@' + c.username : 'Verified owner').slice(0, 20) + (st ? ' ✓' : ' (pending)');
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(txt, plate === 'plate-gold' ? '#6b4a00' : plate === 'plate-wood' ? '#8a5a36' : plate === 'plate-neon' ? '#05060c' : 'rgba(12,16,28,.82)', plate === 'plate-gold' ? '#ffd23a' : plate === 'plate-wood' ? '#f4dcae' : plate === 'plate-neon' ? '#ff4fd8' : st ? '#9bffb4' : '#ffe08a', plate === 'plate-neon'), depthTest: false, transparent: true }));
+  sp.scale.set(10, 2.5, 1); sp.position.set(s.x, up + 4.5, s.z); sp.renderOrder = 9; sp.userData.own = true; group.add(sp);
+  vfx = { group, anim, sprite: sp, base: up + 4.5 };
+}
+function refreshGolden() {
+  if (goldenGroup) { world.remove(goldenGroup); goldenGroup.traverse(o => { if (o.userData.own && o.geometry) o.geometry.dispose(); }); goldenGroup = null; }
+  if (!demo || !W || !W.S.length) return;
+  const g = new THREE.Group(); world.add(g);
+  visitor.goldenToday(W.S.length).forEach(i => {
+    if (visitor.isFound(i)) return; const s = W.S[i], star = new THREE.Mesh(new THREE.OctahedronGeometry(1.6, 0), new THREE.MeshStandardMaterial({ color: 0xffc400, emissive: 0xffa000, emissiveIntensity: 2.4, metalness: 0.8, roughness: 0.25 }));
+    star.scale.y = 1.5; star.position.set(s.x, s.model.topY + 8, s.z); star.userData = { golden: i, own: true, star: true }; const hit = new THREE.Mesh(new THREE.SphereGeometry(5), new THREE.MeshBasicMaterial({ visible: false })); hit.position.copy(star.position); hit.userData = { golden: i, own: true }; g.add(star, hit);
+  });
+  goldenGroup = g;
+}
+function updateVisitorFx(t, now) {
+  if (vfx) { vfx.anim.forEach(f => f(t, now)); vfx.sprite.position.y = vfx.base + Math.sin(t * 1.5) * 0.4; }
+  if (goldenGroup) goldenGroup.children.forEach(o => { if (o.userData.star) { o.rotation.y = t * 1.8; o.position.y += Math.sin(t * 2 + o.userData.golden) * 0.01; } });
+}
+function locateGoldenStar(i) { const s = W && W.S[i]; if (!s) return; flyTo(s.x, s.model.topY + 4, s.z, 70, 5); toast('Look for the spinning gold star!'); }
+function overlayStage(fn) { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on'); setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; fn(); fadeEl.classList.remove('on'); entering = false; }, 600); }
+const visitor = new Visitor({
+  store, notify: msg => toast(msg), applyFx: () => refreshVisitorFx(),
+  getCtx: () => ({ W, count, next: nextMilestone(count), fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => toast('Share cards are coming in the next step.') }),
+  showCrate: res => overlayStage(() => crateStage(interior, res, () => { const r = visitor.openOne(); if (r) crateStage(interior, r, () => {}); })),
+  locateGolden: locateGoldenStar,
+});
+$('devev').addEventListener('click', () => startLiveEvent());
+if (demo) { const hb = $('hubbtn'); hb.style.display = ''; hb.addEventListener('click', () => visitor.open()); visitor.refreshBadge(); }
+
+/* ---------- live milestone event: 10 minutes of fireworks, a parade of cars, sweeping spotlights, double points ---------- */
+let liveEv = null;
+function startLiveEvent() {
+  if (liveEv || !W) return; const now = performance.now() / 1000; visitor.startEvent();
+  const R = Math.min(W.extent * 0.8, 600), beams = [], cars = instanced(carGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.6 }), 14, 'parade');
+  const pal = ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b', '#ff8a6b', '#b79bff']; for (let i = 0; i < 14; i++) cars.setColorAt(i, tmpC.set(pal[i % 6]).multiplyScalar(1.3)); cars.instanceColor.needsUpdate = true; cars.castShadow = true;
+  for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 11, 520, 24, 1, true).translate(0, 260, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.1 + i * 0.3, 0.8, 0.7), transparent: true, opacity: 0.11, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })); b.frustumCulled = false; scene.add(b); beams.push(b); }
+  const pts = [[-P * 1.5 + 2.4, -P * 1.5 + 2.4], [P * 1.5 - 2.4 + 0, -P * 1.5 + 2.4], [P * 1.5 - 2.4, P * 1.5 - 2.4], [-P * 1.5 + 2.4, P * 1.5 - 2.4]].map(([a, b]) => [a + P / 2 - P / 2, b]), lens = [3 * P, 3 * P, 3 * P, 3 * P];
+  liveEv = { until: now + 600, nextFw: now, cars, beams, R, pts, lens, tot: 12 * P }; $('evbanner').style.display = 'block'; toast('LIVE EVENT: double points for 10 minutes!');
+}
+function updateLiveEvent(now) {
+  if (!liveEv) return; const left = liveEv.until - now;
+  if (left <= 0) { world.remove(liveEv.cars); liveEv.beams.forEach(b => scene.remove(b)); liveEv = null; $('evbanner').style.display = 'none'; return; }
+  $('evbanner').textContent = `LIVE EVENT · double points · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} left`;
+  if (now > liveEv.nextFw) { liveEv.nextFw = now + 1.2 + Math.random() * 1.6; const a = Math.random() * 6.283, r = Math.random() * liveEv.R * 0.7; fw.queue.push({ t: now, x: Math.cos(a) * r, y: 70 + Math.random() * 70, z: Math.sin(a) * r, c: ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b', '#ff8a6b', '#b79bff'][Math.floor(Math.random() * 6)] }); }
+  const { pts, lens, tot } = liveEv;
+  for (let i = 0; i < 14; i++) { let d = ((now * 11 + i * (tot / 14)) % tot + tot) % tot, k = 0; while (d > lens[k]) { d -= lens[k]; k++; } const p = pts[k], q = pts[(k + 1) % 4], f = d / lens[k]; setPos(liveEv.cars, i, p[0] + (q[0] - p[0]) * f, 0, p[1] + (q[1] - p[1]) * f, Math.atan2(q[0] - p[0], q[1] - p[1])); }
+  liveEv.cars.instanceMatrix.needsUpdate = true;
+  liveEv.beams.forEach((b, i) => { const a = now * 0.4 + i * 2.094; b.position.set(Math.cos(a) * liveEv.R * 0.5, 0, Math.sin(a) * liveEv.R * 0.5); b.rotation.set(Math.sin(now * 0.7 + i) * 0.5, 0, Math.cos(now * 0.6 + i * 2) * 0.5); });
+}
+/* ---------- explore mode: walk or drive through the city ---------- */
+const explore = new Explore({
+  scene, camera, canvas, getWorld: () => W, carGeo, notify: msg => toast(msg),
+  onStop: () => { fadeEl.classList.add('on'); setTimeout(() => { fly = null; controls.enabled = true; $('hud').style.display = ''; $('dev').style.visibility = ''; frameView(); fitCamera(); const off = camera.position.clone().sub(controls.target); camera.position.copy(controls.target).add(off.setLength(Math.max(desiredDist, 160))); updateChunks(true); fadeEl.classList.remove('on'); }, 450); },
+});
+function beginExplore(mode) {
+  if (interior.active || entering || explore.active || !W) return; entering = true; fadeEl.classList.add('on');
+  setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; explore.start(mode); fadeEl.classList.remove('on'); entering = false; }, 550);
+}
+{ const pop = document.createElement('div'); pop.style.cssText = 'position:fixed;left:50%;bottom:78px;transform:translateX(-50%);display:none;gap:8px;padding:8px;border-radius:14px;background:rgba(10,14,26,.8);border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(12px);z-index:12';
+  pop.innerHTML = '<button data-m="walk">Walk</button><button data-m="drive">Drive a car</button>'; pop.querySelectorAll('button').forEach(b => { b.style.cssText = 'appearance:none;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#f4f7ff;font:inherit;font-size:13px;padding:10px 16px;border-radius:10px;cursor:pointer'; b.addEventListener('click', () => { pop.style.display = 'none'; beginExplore(b.dataset.m); }); });
+  document.body.appendChild(pop); $('explore').addEventListener('click', () => { pop.style.display = pop.style.display === 'none' ? 'flex' : 'none'; }); }
 /* ---------- loop ---------- */
 const labelEl = $('newest'), proj = new THREE.Vector3(), beam = (() => {
   const c = cv(8, 256), g = c.getContext('2d'), grd = g.createLinearGradient(0, 0, 0, 256); grd.addColorStop(0, 'rgba(255,255,255,0)'); grd.addColorStop(.7, 'rgba(255,255,255,.35)'); grd.addColorStop(1, 'rgba(255,255,255,1)'); g.fillStyle = grd; g.fillRect(0, 0, 8, 256);
@@ -728,12 +815,12 @@ function frame(nowMs) {
   if (mode === 'auto') { tDay = (tDay + dt / DAY_SECONDS) % 1; tTarget = tDay; } else { const diff = ((tTarget - tDay + 1.5) % 1) - 0.5; tDay = (tDay + diff * Math.min(1, dt * 1.6) + 1) % 1; }
   updateRain(dt, now); applyTime(tDay);
   if (interior.active) { renderer.toneMappingExposure = 0.9; bloom.strength = 0.35; interior.update(dt); composer.render(); return; }
-  if (!fly) {
+  if (!fly && !explore.active) {
     const off = camera.position.clone().sub(controls.target), sph = new THREE.Spherical().setFromVector3(off); introT = Math.min(introT + dt / 6, 1); const k = easeOut(introT);
     if (introT < 1 && !userTouched) { sph.radius = lerp(desiredDist * 1.9, desiredDist, k); sph.phi = lerp(0.62, 1.15, k); } else if (!userTouched) sph.radius += (desiredDist - sph.radius) * Math.min(1, dt * 0.8);
     camera.position.copy(controls.target).add(off.setFromSpherical(sph));
   }
-  updateFly(now); controls.update();
+  if (explore.active) explore.update(dt, now); else { updateFly(now); controls.update(); }
   for (let i = W.anims.length - 1; i >= 0; i--) { const a = W.anims[i], t = (now - a.t0) / a.dur; if (t < 0) continue; placeStruct(a.s, easeOut(clamp(t, 0, 1))); if (t >= 1) W.anims.splice(i, 1); }
   const pending = W.anims.filter(a => now < a.t0).length, target = count - pending;
   shown = shown < target ? Math.min(target, shown + Math.max(1, (target - shown) * dt * 2.2 + dt * 30)) : target; updateHud();
@@ -746,7 +833,7 @@ function frame(nowMs) {
     labelEl.style.opacity = on ? 1 : 0; labelEl.style.left = (proj.x * 0.5 + 0.5) * innerWidth + 'px'; labelEl.style.top = (-proj.y * 0.5 + 0.5) * innerHeight + 'px';
   } else { beam.visible = ring.visible = false; labelEl.style.opacity = 0; }
   aviMat.color.setRGB(1, 0.07, 0.04).multiplyScalar(0.3 + 4 * Math.max(0, Math.sin(now * 3.1)));
-  updateAgents(dt, now); updateAmbient(now); updateBizFx(now); W.infra.update(now, dt); updateFireworks(dt, now);
+  updateAgents(dt, now); updateAmbient(now); updateBizFx(now); updateVisitorFx(now, now); updateLiveEvent(now); W.infra.update(now, dt); updateFireworks(dt, now);
   if ((frames & 7) === 0) updateChunks();
   composer.render();
   frames++; slowMs += dt * 1000;
@@ -758,12 +845,13 @@ frameView();
 addEventListener('resize', () => { frameView(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); if (W) fitCamera(); });
 
 /* ---------- go ---------- */
-window.__city = { renderer, composer, interior, openBuilding, store, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
+window.__city = { explore, beginExplore, renderer, composer, interior, openBuilding, store, visitor, startLiveEvent, refreshVisitorFx, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
 (async () => {
   try {
     if (params.has('count')) { live = { instagram: Math.round(Number(params.get('count')) * 0.6), youtube: 0, total: Number(params.get('count')) }; live.youtube = live.total - live.instagram; setCount(live.total, { celebrateOk: false }); }
     else { const d = await fetchLive(); if (d) live = d; setCount(live.total, { celebrateOk: false }); }
     requestAnimationFrame(frame); setTimeout(() => $('loading').classList.add('done'), 600);
+    if (demo) setTimeout(() => visitor.dailyVisit(), 5500);
     if (!params.has('count')) setInterval(poll, POLL_MS);
   } catch (e) { $('err').style.display = 'block'; $('err').textContent = String(e); console.error(e); }
 })();

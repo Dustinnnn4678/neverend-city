@@ -40,10 +40,13 @@ const FORCED = new Map([
   [49, 'diner'], [50, 'school'], [51, 'park'], [52, 'shop'], [53, 'shop'], [54, 'clocktower'], [55, 'cinema'], [56, 'bank'],
   [99, 'fire'], [100, 'police'], [101, 'clinic'], [102, 'post'], [103, 'cityhall'],
   [199, 'apartment'], [200, 'townhome'], [201, 'apartment'], [202, 'hotel'],
-  [399, 'office'], [400, 'mall'], [401, 'hospital'], [402, 'garage'], [403, 'observation'], [404, 'office'],
+  [399, 'office'], [400, 'garage'], [401, 'mall'], [402, 'hospital'], [403, 'observation'], [404, 'office'],
   [1199, 'powerplant'],
   [3999, 'stadium'], [7999, 'campus'], [8000, 'amusement'], [14999, 'megatower'], [29999, 'monument'],
 ]);
+// Supporting structures a milestone needs first (the generator builds a missing one right before it).
+// Roads, the highway and the bus network are infrastructure that unlocks earlier by count, so they are always there.
+export const PREREQ = { mall: ['garage'], hospital: ['clinic'], stadium: ['garage'], campus: ['library'], amusement: ['garage'], megatower: ['garage', 'hotel'], monument: ['park'] };
 // Which structure index "owns" each milestone (for fly-to celebrations).
 export const UNLOCK_INDEX = { 25: 24, 50: 49, 100: 99, 200: 199, 400: 399, 4000: 3999, 8000: 7999, 15000: 14999, 30000: 29999 };
 // Infrastructure unlocks fly to a place instead of a structure.
@@ -121,7 +124,7 @@ export function genCity(N) {
     { site: 'skyline', at: SITES.skyline.at, list: lots.filter(l => l.site === 'skyline').sort(byDist(SKYLINE_CENTER)), p: 0 },
   ];
   let ptr = 0, ringMax = 0;
-  const count = {}, zones = { res: 0, com: 0, ind: 0, civ: 0, park: 0 };
+  const pending = [], count = {}, zones = { res: 0, com: 0, ind: 0, civ: 0, park: 0 };
   const structures = [];
 
   const free = (l, n) => !used[l.o] && (!l.site || (SITES[l.site]?.fill && n >= SITES[l.site].at));
@@ -138,7 +141,10 @@ export function genCity(N) {
 
   for (let i = 0; i < N; i++) {
     const n = i + 1, rng = rngFor(i);
-    let type = FORCED.get(i), lot;
+    // Milestone structures wait in a queue; if something they depend on is missing, that gets built first.
+    if (FORCED.has(i)) pending.push(FORCED.get(i));
+    let type = null, lot;
+    if (pending.length) { const w = pending[0], miss = (PREREQ[w] || []).find(p => !count[p]); type = miss || pending.shift(); }
     if (type && SPAN9[type]) { const [sbx, sbz] = SPAN9[type].split(',').map(Number); lot = lots[index.get(sbx + ',' + sbz + ',1,1')]; }
     if (!lot) for (const f of fillLists) if (n >= f.at) { while (f.p < f.list.length && used[f.list[f.p].o]) f.p++; if (f.p < f.list.length) { lot = f.list[f.p]; break; } }
     if (!lot) { while (used[lots[ptr].o] || lots[ptr].site) ptr++; lot = lots[ptr]; }

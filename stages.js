@@ -1,4 +1,4 @@
-// Extra 3D "stages" that reuse the interior viewer: cosmetics preview, 3D-print miniature, net-worth chart.
+﻿// Extra 3D "stages" that reuse the interior viewer: cosmetics preview, 3D-print miniature, net-worth chart.
 // Everything here runs in the browser. Buying and ordering need the server (see docs/SERVER-PLAN.md), so the buy and
 // order buttons only explain that for now; previewing and downloading an STL work today.
 import * as THREE from 'three';
@@ -6,7 +6,7 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { netWorth, FURNITURE, BUSINESSES } from './economy.js';
 
 const fmt = n => Math.round(n).toLocaleString();
-function labelTex(text, bg, fg, glow) {
+export function labelTex(text, bg, fg, glow) {
   const c = document.createElement('canvas'); c.width = 512; c.height = 128; const g = c.getContext('2d');
   g.fillStyle = bg; g.fillRect(0, 0, 512, 128); g.strokeStyle = fg; g.lineWidth = 6; g.strokeRect(6, 6, 500, 116);
   g.fillStyle = fg; g.font = 'bold 56px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; if (glow) { g.shadowColor = fg; g.shadowBlur = 24; } g.fillText(text, 256, 68);
@@ -22,23 +22,24 @@ const PLATE = { None: null, Wood: 'wood', Neon: 'neon' };
 const PRICE = { color: 1, neon: 2, glow: 2, roof: 3, fx: 4, plate: 1 };
 const PRINT = { 50: 20, 80: 30, 120: 40 };
 
+export function roofItem(kind) {
+  const g = new THREE.Group(), M = (c, r = 0.6, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  if (kind === 'flag') { add(new THREE.CylinderGeometry(0.08, 0.08, 5, 8), M('#cfd3d8', 0.4, 0.6), 0, 2.5, 0); add(new THREE.BoxGeometry(2.2, 1.3, 0.06), M('#d9433a'), 1.2, 4.3, 0); }
+  if (kind === 'antenna') { add(new THREE.CylinderGeometry(0.06, 0.18, 9, 6), M('#cfd3d8', 0.4, 0.6), 0, 4.5, 0); for (const y of [4, 6, 8]) add(new THREE.BoxGeometry(1.8 - (y - 4) * 0.2, 0.08, 0.08), M('#cfd3d8', 0.4, 0.6), 0, y, 0); add(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.2, 0.1) }), 0, 9.1, 0); }
+  if (kind === 'solar') for (let i = 0; i < 4; i++) { const p = add(new THREE.BoxGeometry(2.4, 0.08, 1.4), M('#1d3a6e', 0.25, 0.7), (i % 2) * 2.7 - 1.3, 0.6, Math.floor(i / 2) * 1.8 - 0.9); p.rotation.x = -0.45; add(new THREE.BoxGeometry(0.08, 0.5, 0.08), M('#8a8f96'), (i % 2) * 2.7 - 1.3, 0.25, Math.floor(i / 2) * 1.8 - 0.9); }
+  if (kind === 'garden') { add(new THREE.BoxGeometry(3.6, 0.4, 3), M('#5a4130', 1), 0, 0.2, 0); add(new THREE.BoxGeometry(3.4, 0.1, 2.8), M('#4f8a3a', 1), 0, 0.45, 0); for (const [x, z] of [[-1, -0.6], [0.9, 0.5], [0, -0.1]]) add(new THREE.IcosahedronGeometry(0.55, 1), M('#3f7a34', 0.9), x, 0.95, z); }
+  if (kind === 'dish') { add(new THREE.CylinderGeometry(0.15, 0.2, 1.4, 8), M('#8a8f96', 0.5, 0.5), 0, 0.7, 0); const d = add(new THREE.SphereGeometry(1.2, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2.4), M('#eceef2', 0.4, 0.4), 0, 1.7, 0); d.rotation.x = -1.0; d.material.side = THREE.DoubleSide; add(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6), M('#8a8f96'), 0, 2.2, 0.55).rotation.x = -0.6; }
+  return g;
+}
+
+
 function modelBounds(model) { const b = new THREE.Box3(); for (const g of Object.values(model.parts)) { g.computeBoundingBox(); b.union(g.boundingBox); } return b; }
 
 export function previewStage(sys, s) {
   const { getModel, materials } = sys.ctx, model = getModel(s), bb = modelBounds(model), size = bb.getSize(new THREE.Vector3()), top = bb.max.y;
   const o = { color: null, neon: null, glow: null, roof: null, fx: null, plate: null, mm: 80, name: 'My Building' };
   let root, scene, fxList = [], sparkle = null;
-
-  function roofItem(kind) {
-    const g = new THREE.Group(), M = (c, r = 0.6, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
-    const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
-    if (kind === 'flag') { add(new THREE.CylinderGeometry(0.08, 0.08, 5, 8), M('#cfd3d8', 0.4, 0.6), 0, 2.5, 0); add(new THREE.BoxGeometry(2.2, 1.3, 0.06), M('#d9433a'), 1.2, 4.3, 0); }
-    if (kind === 'antenna') { add(new THREE.CylinderGeometry(0.06, 0.18, 9, 6), M('#cfd3d8', 0.4, 0.6), 0, 4.5, 0); for (const y of [4, 6, 8]) add(new THREE.BoxGeometry(1.8 - (y - 4) * 0.2, 0.08, 0.08), M('#cfd3d8', 0.4, 0.6), 0, y, 0); add(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.2, 0.1) }), 0, 9.1, 0); }
-    if (kind === 'solar') for (let i = 0; i < 4; i++) { const p = add(new THREE.BoxGeometry(2.4, 0.08, 1.4), M('#1d3a6e', 0.25, 0.7), (i % 2) * 2.7 - 1.3, 0.6, Math.floor(i / 2) * 1.8 - 0.9); p.rotation.x = -0.45; add(new THREE.BoxGeometry(0.08, 0.5, 0.08), M('#8a8f96'), (i % 2) * 2.7 - 1.3, 0.25, Math.floor(i / 2) * 1.8 - 0.9); }
-    if (kind === 'garden') { add(new THREE.BoxGeometry(3.6, 0.4, 3), M('#5a4130', 1), 0, 0.2, 0); add(new THREE.BoxGeometry(3.4, 0.1, 2.8), M('#4f8a3a', 1), 0, 0.45, 0); for (const [x, z] of [[-1, -0.6], [0.9, 0.5], [0, -0.1]]) add(new THREE.IcosahedronGeometry(0.55, 1), M('#3f7a34', 0.9), x, 0.95, z); }
-    if (kind === 'dish') { add(new THREE.CylinderGeometry(0.15, 0.2, 1.4, 8), M('#8a8f96', 0.5, 0.5), 0, 0.7, 0); const d = add(new THREE.SphereGeometry(1.2, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2.4), M('#eceef2', 0.4, 0.4), 0, 1.7, 0); d.rotation.x = -1.0; d.material.side = THREE.DoubleSide; add(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 6), M('#8a8f96'), 0, 2.2, 0.55).rotation.x = -0.6; }
-    return g;
-  }
 
   function rebuild() {
     if (root) { scene.remove(root); root.traverse(m => { if (m.userData.own) { m.geometry.dispose(); } }); }
@@ -80,12 +81,12 @@ export function previewStage(sys, s) {
       sc.add(hm, sun, base); rebuild();
     },
     panel(el) {
-      const sel = (key, map) => `<div class="tag">${{ color: 'Building color', neon: 'Neon sign', glow: 'Glowing windows', roof: 'Rooftop item', fx: 'Animated effect', plate: 'Name plate' }[key]} · $${PRICE[key]}</div><div style="display:flex;flex-wrap:wrap;gap:6px">${Object.keys(map).map(n => `<button data-k="${key}" data-v="${n}" style="${o[key] === (key === 'roof' ? (map[n] ? n : null) : (map[n] ?? null)) || (!o[key] && !map[n]) ? 'background:#2f6aa8' : ''}">${n}</button>`).join('')}</div>`;
+      const sel = (key, map) => `<div class="tag">${{ color: 'Building color', neon: 'Neon sign', glow: 'Glowing windows', roof: 'Rooftop item', fx: 'Animated effect', plate: 'Name plate' }[key]} Â· $${PRICE[key]}</div><div style="display:flex;flex-wrap:wrap;gap:6px">${Object.keys(map).map(n => `<button data-k="${key}" data-v="${n}" style="${o[key] === (key === 'roof' ? (map[n] ? n : null) : (map[n] ?? null)) || (!o[key] && !map[n]) ? 'background:#2f6aa8' : ''}">${n}</button>`).join('')}</div>`;
       const total = Object.keys(PRICE).reduce((t, k) => t + (o[k] ? PRICE[k] : 0), 0);
       el.innerHTML = `<h3>Preview on your building</h3><div class="sub">Try cosmetics for free. They are visual only: no points, ranking or advantages.</div><input id="pname" value="${o.name}" maxlength="18" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.35);color:inherit">`
         + sel('color', COLORS) + sel('neon', NEON) + sel('glow', GLOW) + sel('roof', ROOF) + sel('fx', FX) + sel('plate', PLATE)
         + `<button class="pri" id="pbuy">Buy selected: $${total}</button><div class="sub">Payments are not connected yet. Later this opens Stripe Checkout in test mode.</div>`
-        + `<h3 style="margin-top:8px">3D-printed miniature</h3><div class="sub">Your building as a print-ready STL file. Model size: ${(size.x).toFixed(0)} x ${(size.z).toFixed(0)} x ${(size.y).toFixed(0)} m, scaled down to the size you pick.</div><div style="display:flex;gap:6px">${Object.keys(PRINT).map(mm => `<button data-mm="${mm}" style="${o.mm == mm ? 'background:#2f6aa8' : ''}">${mm} mm · $${PRINT[mm]}</button>`).join('')}</div><button id="pstl">Download STL (free test)</button><button id="porder">Order a printed miniature</button>`;
+        + `<h3 style="margin-top:8px">3D-printed miniature</h3><div class="sub">Your building as a print-ready STL file. Model size: ${(size.x).toFixed(0)} x ${(size.z).toFixed(0)} x ${(size.y).toFixed(0)} m, scaled down to the size you pick.</div><div style="display:flex;gap:6px">${Object.keys(PRINT).map(mm => `<button data-mm="${mm}" style="${o.mm == mm ? 'background:#2f6aa8' : ''}">${mm} mm Â· $${PRINT[mm]}</button>`).join('')}</div><button id="pstl">Download STL (free test)</button><button id="porder">Order a printed miniature</button>`;
       el.querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.k, v = b.dataset.v, map = { color: COLORS, neon: NEON, glow: GLOW, roof: ROOF, fx: FX, plate: PLATE }[k]; o[k] = k === 'roof' ? (map[v] ? v : null) : (map[v] ?? null); rebuild(); this.panel(el); }));
       el.querySelectorAll('[data-mm]').forEach(b => b.addEventListener('click', () => { o.mm = +b.dataset.mm; this.panel(el); }));
       el.querySelector('#pname').addEventListener('input', e => { o.name = e.target.value || 'My Building'; clearTimeout(this._nt); this._nt = setTimeout(rebuild, 250); });
@@ -117,5 +118,42 @@ export function statsStage(sys) {
       el.innerHTML = `<h3>My stats</h3><div class="sub">Net worth over time, as 3D bars (oldest on the left).</div><div class="banner">Net worth <b>${fmt(nw)}</b> = coins + upgrades + furniture</div><div class="item"><span>Coins</span><b>${fmt(st.coins)}</b></div><div class="item"><span>Businesses</span><b>${bizs.length}</b></div><div class="item"><span>Furniture placed</span><b>${furn}</b></div><div class="item"><span>Visits</span><b>${visits}</b></div><div class="item"><span>Likes</span><b>${likes}</b></div><div class="sub">Leaderboards, seasons and the Self-Made board need the server and are not live yet.</div>`;
     },
     update(dt, t) { if (this.group) this.group.rotation.y = Math.sin(t * 0.2) * 0.35; },
+  });
+}
+
+/* ---------- 3D mystery crate opening ---------- */
+const RC = { common: '#b8c4d6', rare: '#4a9eff', epic: '#b06bff', legendary: '#ffb020' };
+export function crateStage(sys, res, again) {
+  const { item, dupe } = res, col = new THREE.Color(RC[item.rarity]); let chest, lid, trinket, burst, bpos, bvel, glow, shown = false, panelEl = null;
+  const mk = (geo, color, rough = 0.6, metal = 0) => new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal }));
+  sys.openStage({
+    title: 'Mystery crate', autoRotate: 0, camera: { r: 9, target: [0, 1.4, 0], height: 0.4 },
+    build(sc) {
+      sc.background = new THREE.Color('#0b0e16'); sc.add(new THREE.HemisphereLight(0xcfd8ff, 0x222633, 0.7)); const d = new THREE.DirectionalLight(0xffffff, 2); d.position.set(4, 8, 6); d.castShadow = true; sc.add(d);
+      const floor = mk(new THREE.CylinderGeometry(5, 5.4, 0.3, 48), '#1b2030', 0.8); floor.position.y = -0.15; floor.receiveShadow = true; sc.add(floor);
+      chest = new THREE.Group(); const body = mk(new THREE.BoxGeometry(2.2, 1.1, 1.4), '#7a4a26'); body.position.y = 0.55; chest.add(body);
+      for (const x of [-0.9, 0.9]) { const b = mk(new THREE.BoxGeometry(0.16, 1.14, 1.44), '#d9b53a', 0.3, 0.8); b.position.set(x, 0.55, 0); chest.add(b); }
+      lid = new THREE.Group(); lid.position.set(0, 1.1, -0.7); const top = mk(new THREE.BoxGeometry(2.2, 0.36, 1.4), '#8a5630'); top.position.set(0, 0.18, 0.7); lid.add(top); for (const x of [-0.9, 0.9]) { const b = mk(new THREE.BoxGeometry(0.16, 0.4, 1.44), '#d9b53a', 0.3, 0.8); b.position.set(x, 0.18, 0.7); lid.add(b); } chest.add(lid);
+      const lock = mk(new THREE.BoxGeometry(0.3, 0.3, 0.1), RC[item.rarity], 0.2, 0.9); lock.position.set(0, 1.0, 0.72); chest.add(lock); chest.traverse(o => { if (o.isMesh) o.castShadow = true; }); sc.add(chest);
+      glow = new THREE.PointLight(col, 0, 14, 1.4); glow.position.set(0, 1.4, 0); sc.add(glow);
+      const g = new THREE.Group(), emis = (c, i = 1.2) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: i, roughness: 0.3, metalness: 0.3 });
+      const slot = item.slot, nm = item.name;
+      if (slot === 'color') g.add(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), emis(nm.includes('Gold') ? '#ffcc33' : '#e8d0a0', 0.5)));
+      else if (slot === 'roof') { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.2, 1.6, 8), emis('#cfd3d8', 0.4)); g.add(m); const dish = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2.4), emis('#eceef2', 0.4)); dish.position.y = 0.9; dish.rotation.x = -0.9; g.add(dish); }
+      else if (slot === 'plate') g.add(new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 0.1), emis('#ffd23a', 0.8)));
+      else if (slot === 'fx') g.add(new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.08, 10, 40), emis('#6fe3ff', 1.6)));
+      else g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.8, 0), emis(RC[item.rarity], 1.4)));
+      g.scale.setScalar(0); trinket = g; sc.add(g);
+      const n = 220; bpos = new Float32Array(n * 3); bvel = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const a = Math.random() * 6.283, b = Math.acos(2 * Math.random() - 1), s = 2 + Math.random() * 5; bvel.set([Math.sin(b) * Math.cos(a) * s, Math.abs(Math.cos(b)) * s * 1.2, Math.sin(b) * Math.sin(a) * s], i * 3); bpos.set([0, 1.3, 0], i * 3); }
+      const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(bpos, 3)); burst = new THREE.Points(bg, new THREE.PointsMaterial({ color: col.clone().multiplyScalar(2.2), size: 4, sizeAttenuation: false, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); burst.frustumCulled = false; burst.visible = false; sc.add(burst);
+    },
+    panel(el) { panelEl = el; if (!shown) el.innerHTML = '<h3>Opening…</h3><div class="sub">Good luck!</div>'; },
+    update(dt, t) {
+      if (t < 1.3) { chest.rotation.z = Math.sin(t * 38) * 0.035 * Math.min(1, t * 1.5); chest.position.x = Math.sin(t * 52) * 0.02 * t; }
+      else { chest.rotation.z = 0; chest.position.x = 0; const k = Math.min(1, (t - 1.3) / 0.45); lid.rotation.x = -k * 1.95; glow.intensity = 60 * Math.min(1, (t - 1.3) / 0.6); burst.visible = true;
+        for (let i = 0; i < bpos.length / 3; i++) { const dtp = Math.min(dt, 0.05); bpos[i * 3] += bvel[i * 3] * dtp; bpos[i * 3 + 1] += (bvel[i * 3 + 1] - 6 * (t - 1.3)) * dtp; bpos[i * 3 + 2] += bvel[i * 3 + 2] * dtp; } burst.geometry.attributes.position.needsUpdate = true; burst.material.opacity = Math.max(0, 1 - (t - 1.3) / 3); }
+      if (t > 1.5) { const k = Math.min(1, (t - 1.5) / 0.9), e = 1 - Math.pow(1 - k, 3); trinket.scale.setScalar(e * 1.4); trinket.position.y = 1.4 + e * 2.2 + Math.sin(t * 2) * 0.1; trinket.rotation.y = t * 1.6; }
+      if (t > 2.4 && !shown && panelEl) { shown = true; const el = panelEl; el.innerHTML = `<h3 style="color:${RC[item.rarity]}">${item.rarity.toUpperCase()}</h3><div class="banner">${item.name}</div><div class="sub">${dupe ? 'You already had this, so it turned into 25 points.' : 'Added to your wardrobe. Open the visitor hub to equip it.'}</div>${sys.store.v.crates > 0 ? `<button class="pri" id="cagain">Open another (${sys.store.v.crates} left)</button>` : '<div class="sub">No crates left. Earn one with a 7-day streak or at the next milestone.</div>'}`; const b = el.querySelector('#cagain'); if (b) b.addEventListener('click', again); sys.notify(`${item.rarity}: ${item.name}`); }
+    },
   });
 }
