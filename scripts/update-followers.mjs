@@ -1,4 +1,4 @@
-// Updates live.json with Instagram followers + YouTube subscribers.
+﻿// Updates live.json with Instagram followers + YouTube subscribers.
 // Runs in GitHub Actions. Secrets: IG_ACCESS_TOKEN, YT_API_KEY. Variable/secret: YT_CHANNEL_ID.
 // If a platform fails, its last known number is kept. Numbers never go down.
 import { readFile, writeFile } from 'node:fs/promises';
@@ -37,7 +37,7 @@ async function youtube() {
 }
 
 const file = new URL('../live.json', import.meta.url);
-const live = JSON.parse(await readFile(file, 'utf8'));
+const live = JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''));
 const before = JSON.stringify(live);
 let failed = false;
 
