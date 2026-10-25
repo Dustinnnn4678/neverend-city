@@ -77,14 +77,14 @@ export class Remote {
       this.select(`golden_found?day=eq.${day}&select=building`), this.select('predictions?select=milestone,day'), this.select('votes?select=milestone,option'), this.select('verified_platforms?select=platform'),
     ]), pr = p[0] || {}, cl = c[0];
     return {
-      points: pr.points || 0, streak: pr.streak || 0, bestStreak: pr.best_streak || 0, lastDay: pr.last_day ?? -1, crates: pr.crates || 0, ageOk: !!pr.age_ok, referralCode: pr.referral_code || '', isAdmin: !!pr.is_admin,
+      points: pr.points || 0, streak: pr.streak || 0, bestStreak: pr.best_streak || 0, lastDay: pr.last_day ?? -1, crates: pr.crates || 0, ageOk: !!pr.age_ok, referralCode: pr.referral_code || '', isAdmin: !!pr.is_admin, supporter: !!pr.supporter,
       owned: owned.map(o => o.cosmetic_id), equipped: Object.fromEntries(eq.map(e => [e.slot, e.cosmetic_id])),
       claim: cl ? { building: cl.building, platform: cl.platform, username: cl.username, optIn: cl.opt_in, status: cl.status, code: cl.code } : null,
       goldenFound: { [day]: found.map(f => f.building) }, predictions: Object.fromEntries(pred.map(x => [x.milestone, x.day])), votes: Object.fromEntries(votes.map(x => [x.milestone, x.option])),
       verified: Object.fromEntries(ver.map(x => [x.platform, true])), referrals: 0, seenMilestones: [], eventStart: 0,
     };
   }
-  publicClaims() { return this.select('public_claims?select=building,display_name,status'); }
+  publicClaims() { return this.select('public_claims?select=building,display_name,status,supporter'); }
   async goldenToday(day) { const r = await this.select(`golden_days?day=eq.${day}&select=buildings`); return r[0] ? r[0].buildings : []; }
   async liveEventStart() { const r = await this.select('live_events?select=started_at&order=started_at.desc&limit=1'); return r[0] ? Date.parse(r[0].started_at) : 0; }
   voteOptions() { return this.select('vote_options?select=milestone,option'); }
