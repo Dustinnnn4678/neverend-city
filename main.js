@@ -10,7 +10,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { genCity, MILESTONES, nextMilestone, UNLOCK_INDEX, UNLOCK_POS, platformOf, blockSite, siteUnlocked, SITES, L, P, T } from './city-gen.js';
 import { makeMaterials, getModel } from './models.js';
 import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } from './infra.js';
-import { InteriorSystem, canEnter } from './interior.js';
+import { InteriorSystem, canEnter, HOME_TYPES } from './interior.js';
+import { RemoteGameStore } from './gamestore.js';
 import { store } from './store.js';
 import { previewStage, statsStage, crateStage, shareStage, roofItem, labelTex } from './stages.js';
 import { Visitor } from './visitor.js';
@@ -659,9 +660,9 @@ addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if 
 let bizFx = null;
 function refreshBizFx() {
   if (bizFx) { world.remove(bizFx.group); bizFx.group.traverse(o => { if (o.isInstancedMesh) o.dispose(); else if (o.geometry && o.userData.own) o.geometry.dispose(); }); bizFx = null; }
-  if (!demo || !W) return;
+  if (!visitorOn || !W) return;
   const group = new THREE.Group(), people = []; world.add(group);
-  for (const [idx, b] of Object.entries(store.state.business)) {
+  for (const [idx, b] of Object.entries(interior.store.state.business)) {
     const s = W.S[+idx]; if (!s) continue;
     const d = BUSINESSES[b.type], st = stageOf(b.level).name, rank = st === 'stand' ? 0 : st === 'shop' ? 1 : 2, yaw = s.yaw * Math.PI / 2, fx = Math.sin(yaw), fz = Math.cos(yaw);
     const sign = new THREE.Mesh(new THREE.BoxGeometry(4 + rank * 2, 1.1 + rank * 0.3, 0.3), new THREE.MeshBasicMaterial({ color: new THREE.Color(d.color).multiplyScalar(1.6), toneMapped: false }));
@@ -702,6 +703,16 @@ function openBuilding(s) {
   setTimeout(() => fadeEl.classList.add('on'), 1900);
   setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; interior.enter(s); fadeEl.classList.remove('on'); entering = false; }, 2500);
 }
+/* live site: you can only go inside the building you claimed; the server checks that again */
+function enterOwn(s) {
+  const c = visitor.v.claim;
+  if (!c) { toast('Claim a building to go inside it.'); return; }
+  if (c.building !== s.i) { toast('You can only go inside your own building.'); return; }
+  if (!canEnter(s)) { toast('This kind of building has no inside yet.'); return; }
+  if (!visitor.remote) { openBuilding(s); return; }
+  toast('Opening the door…');
+  interior.store.enter(s.i, HOME_TYPES.has(s.type) ? 'home' : 'shop').then(() => openBuilding(s)).catch(e => toast(e.message || 'Could not go inside.'));
+}
 const pickRay = new THREE.Raycaster(), pickNdc = new THREE.Vector2(); let pdown = null;
 const visibleChain = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
 canvas.addEventListener('pointerdown', e => { pdown = [e.clientX, e.clientY, performance.now()]; });
@@ -714,7 +725,7 @@ canvas.addEventListener('pointerup', e => {
   const hit = pickRay.intersectObjects(meshes, false)[0]; if (!hit) return;
   const s = hit.object.userData.items[hit.instanceId]; if (!s) return;
   if (visitor.pickMode) { if (visitor.claimedSet.has(s.i)) { toast('That building is already claimed. Pick another.'); return; } visitor.pickMode = false; hoverMark.visible = false; visitor.pending = s; visitor.open('building'); return; }
-  if (!demo) return;
+  if (!demo) { enterOwn(s); return; }
   if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
 });
 /* while picking a building to claim, a glowing ring + beam follows the pointer (green = free, red = already claimed) */
@@ -802,11 +813,12 @@ function locateGoldenStar(i) { const s = W && W.S[i]; if (!s) return; flyTo(s.x,
 function overlayStage(fn) { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on'); setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; fn(); fadeEl.classList.remove('on'); entering = false; }, 600); }
 const visitor = new Visitor({
   store, remote: useRemote ? new Remote() : null, notify: msg => toast(msg), applyFx: () => { refreshVisitorFx(); refreshGolden(); }, onClaims: c => { refreshClaimPlates(c); refreshGolden(); }, onEvent: ms => { if (ms && Date.now() - ms < 600000 && !liveEv) startLiveEvent(ms); },
-  getCtx: () => ({ W, count, next: nextMilestone(count), fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => overlayStage(() => shareStage(interior, W.S[i], visitor.v.claim, location.host + location.pathname.replace(/\/$/, ''))) }),
+  getCtx: () => ({ W, count, next: nextMilestone(count), enter: i => { const s = W.S[i]; if (s) enterOwn(s); }, fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => overlayStage(() => shareStage(interior, W.S[i], visitor.v.claim, location.host + location.pathname.replace(/\/$/, ''))) }),
   showCrate: res => overlayStage(() => crateStage(interior, res, () => { const r = visitor.openOne(); if (r) crateStage(interior, r, () => {}); })),
   locateGolden: locateGoldenStar,
   onClaimed: i => { const s = W && W.S[i]; if (!s) return; flyTo(s.x, s.model.topY + 8, s.z, 70, 6); const cols = ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b']; for (let k = 0; k < 6; k++) setTimeout(() => { if (typeof fw !== 'undefined') fw.queue.push({ t: performance.now() / 1000, x: s.x + (Math.random() - .5) * 30, y: s.model.topY + 20 + Math.random() * 14, z: s.z + (Math.random() - .5) * 30, c: cols[k % 4] }); }, 900 + k * 450); },
 });
+if (visitor.remote) { const gs = new RemoteGameStore(visitor.remote); gs.notify = toast; gs.onDesync = () => { if (interior.active && interior.s) interior.enter(interior.s); }; interior.store = gs; }
 $('devev').addEventListener('click', () => startLiveEvent());
 if (visitorOn) {
   const hb = $('hubbtn'); hb.style.display = ''; hb.addEventListener('click', () => visitor.open());

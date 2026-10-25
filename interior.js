@@ -212,7 +212,11 @@ export class InteriorSystem {
     this.ghost = { id, rot: 0, obj, item: { uid: -1, id, x: 0, z: 0, rot: 0 }, moving: !!moving }; obj.visible = false; this.scene.add(obj);
     this._select(null); this._renderPanel();
   }
-  _cancelGhost() { if (!this.ghost) return; this.scene.remove(this.ghost.obj); this.ghost = null; if (this.active) this._renderPanel(); }
+  _cancelGhost() {
+    if (!this.ghost) return; const g = this.ghost; this.scene.remove(g.obj); this.ghost = null;
+    if (g.moving && g.orig && this.active) { this.store.furnitureOf(this.s.i).push(g.orig); this._addObject(g.orig); this.store.save(); this._vaultRefresh(); }   // cancelled a move: put the item back
+    if (this.active) this._renderPanel();
+  }
   _rotateGhost() { if (!this.ghost || FURNITURE[this.ghost.id].kind === 'wall') return; this.ghost.item.rot = (this.ghost.item.rot + 1) % 4; this._updateGhost(); }
   _move(e) {
     if (!this.ghost) return; this._ndc(e); const f = FURNITURE[this.ghost.id], it = this.ghost.item, { W, D } = this.dim;
@@ -236,7 +240,9 @@ export class InteriorSystem {
     this._ndc(e);
     if (this.ghost) { if (!this.ghost.item.x && !this.ghost.item.z && !this.ghost.obj.visible) return; this._updateGhost(); if (!this.ghost.valid) { this.notify('That spot is blocked.'); return; }
       const f = FURNITURE[this.ghost.id]; if (!this.ghost.moving && !this.store.spend(f.price)) { this.notify('Not enough City Coins.'); return; }
-      const it = { ...this.ghost.item, uid: this.store.nextUid() }; this.store.furnitureOf(this.s.i).push(it); this.store.save(); const id = this.ghost.id; this._cancelGhost(); const o = this._addObject(it); this._select(o); this._refreshCoins(); this._vaultRefresh(); void id; return; }
+      const moved = this.ghost.moving && this.ghost.fromUid, it = { ...this.ghost.item, uid: moved ? this.ghost.fromUid : this.store.nextUid() }; this.store.furnitureOf(this.s.i).push(it); this.store.save();
+      if (moved) this._act('move', { ref: it }); else this._act('place', { ref: it });
+      this.ghost.orig = null; const id = this.ghost.id; this._cancelGhost(); const o = this._addObject(it); this._select(o); this._refreshCoins(); this._vaultRefresh(); void id; return; }
     const hits = this.ray.intersectObjects(this.placed, true); if (hits.length) { let o = hits[0].object; while (o && !o.userData.item) o = o.parent; this._select(o || null); } else this._select(null);
   }
   _select(o) {
@@ -246,9 +252,9 @@ export class InteriorSystem {
   }
   _sell() {
     if (!this.sel) return; const it = this.sel.userData.item, f = FURNITURE[it.id], list = this.store.furnitureOf(this.s.i); list.splice(list.findIndex(x => x.uid === it.uid), 1);
-    this.store.earn(Math.floor(f.price * SELL_BACK)); this.store.save(); this.furnRoot.remove(this.sel); this.placed.splice(this.placed.indexOf(this.sel), 1); this._select(null); this._refreshCoins(); this._vaultRefresh();
+    this.store.earn(Math.floor(f.price * SELL_BACK)); this.store.save(); this._act('sell', { ref: it }); this.furnRoot.remove(this.sel); this.placed.splice(this.placed.indexOf(this.sel), 1); this._select(null); this._refreshCoins(); this._vaultRefresh();
   }
-  _moveSel() { if (!this.sel) return; const it = this.sel.userData.item, list = this.store.furnitureOf(this.s.i); list.splice(list.findIndex(x => x.uid === it.uid), 1); this.store.save(); this.furnRoot.remove(this.sel); this.placed.splice(this.placed.indexOf(this.sel), 1); this._select(null); this.startPlace(it.id, true); this.ghost.item.rot = it.rot; }
+  _moveSel() { if (!this.sel) return; const it = this.sel.userData.item, list = this.store.furnitureOf(this.s.i); list.splice(list.findIndex(x => x.uid === it.uid), 1); this.store.save(); this.furnRoot.remove(this.sel); this.placed.splice(this.placed.indexOf(this.sel), 1); this._select(null); this.startPlace(it.id, true); this.ghost.item.rot = it.rot; this.ghost.fromUid = it.uid; this.ghost.orig = it; }
   _vaultRefresh() { if (this.kind !== 'home') return; this.scene.remove(this.vault); this._vault(); }
 
   /* ----- panels ----- */
@@ -315,11 +321,11 @@ export class InteriorSystem {
       for (const [type, d] of Object.entries(BUSINESSES)) { const cost = type === 'lemonade' ? 0 : d.base * 5, locked = lvOwner < d.unlockOwner; h += `<button class="item" data-open="${type}" ${locked || others >= 1 ? 'disabled' : ''}><span>${d.name}<br><small class="tag">${locked ? 'Owner level ' + d.unlockOwner : fmt(d.base) + ' coins/hour at level 1'}</small></span><b>${cost ? fmt(cost) : 'Free'}</b></button>`; }
       h += `<div class="tag">Extras</div><button id="iprev">Cosmetics and 3D-print preview</button>`;
       p.innerHTML = h; p.querySelector('#iprev').addEventListener('click', () => this.ctx.openPreview(this));
-      p.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => { const type = el.dataset.open, cost = type === 'lemonade' ? 0 : BUSINESSES[type].base * 5; if (!this.store.spend(cost)) { this.notify('Not enough City Coins.'); return; } st.business[this.s.i] = { type, level: 1, workers: 0, manager: false, lastCollect: Date.now(), fixedAt: 0 }; this.store.save(); this.s.bizType = type; this._rebuildShop(); }));
+      p.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => { const type = el.dataset.open, cost = type === 'lemonade' ? 0 : BUSINESSES[type].base * 5; if (!this.store.spend(cost)) { this.notify('Not enough City Coins.'); return; } st.business[this.s.i] = { type, level: 1, workers: 0, manager: false, lastCollect: Date.now(), fixedAt: 0 }; this.store.save(); this._act('open', { type }); this.s.bizType = type; this._rebuildShop(); }));
       return;
     }
-    const d = BUSINESSES[b.type], per = baseIncomePerHour(b.type, b.level), pend = pendingEarnings(b, st.player, now, st.seed), stage = stageOf(b.level);
-    const evs = [...eventsForDay(st.seed, dayOf(now)), ...eventsForDay(st.seed, dayOf(now) - 1)].filter(e => now >= e.start && now < e.end), broken = evs.find(e => e.needsFix && !(b.fixedAt >= e.start && b.fixedAt < e.end + HOUR));
+    const d = BUSINESSES[b.type], per = baseIncomePerHour(b.type, b.level), pend = this._pend(b, now), stage = stageOf(b.level);
+    const evs = st.noEvents ? [] : [...eventsForDay(st.seed, dayOf(now)), ...eventsForDay(st.seed, dayOf(now) - 1)].filter(e => now >= e.start && now < e.end), broken = evs.find(e => e.needsFix && !(b.fixedAt >= e.start && b.fixedAt < e.end + HOUR));
     let h = `<h3>${d.name}</h3><div class="sub">Level ${b.level} of ${MAX_LEVEL} · ${stage.name} · ${fmt(per)} coins/hour</div>`;
     for (const e of evs) h += `<div class="banner">${e.label}</div>`;
     h += `<div class="banner">Waiting to collect: <b>${fmt(pend)}</b> coins${b.manager ? '' : ' (up to 1 hour stored; hire a manager to store 8 hours)'}</div>`;
@@ -333,14 +339,16 @@ export class InteriorSystem {
     p.innerHTML = h;
     const on = (id, fn) => { const el = p.querySelector('#' + id); if (el) el.addEventListener('click', fn); };
     on('iprev', () => this.ctx.openPreview(this));
-    on('icollect', () => { const g = pendingEarnings(b, st.player, Date.now(), st.seed); b.lastCollect = Date.now(); this.store.earn(g); this._popCoins('+' + fmt(g)); this._renderPanel(); });
+    on('icollect', () => { const g = this._pend(b); b.lastCollect = Date.now(); this.store.earn(g); this._popCoins('+' + fmt(g)); this._act('collect'); this._renderPanel(); });
     on('ifix', () => { b.fixedAt = Date.now(); this.store.save(); this._renderPanel(); });
-    on('iup', () => { const c = upgradeCost(b.type, b.level); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); this._settle(b); b.level++; this.store.save(); this._rebuildShop(); });
-    on('iwork', () => { const c = workerCost(b.type, b.workers); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.workers++; this.store.save(); this._rebuildShop(); });
-    on('imgr', () => { const c = managerCost(b.type); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.manager = true; this._settle(b); this.store.save(); this._rebuildShop(); });
+    on('iup', () => { const c = upgradeCost(b.type, b.level); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); this._settle(b); b.level++; this.store.save(); this._act('upgrade'); this._rebuildShop(); });
+    on('iwork', () => { const c = workerCost(b.type, b.workers); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.workers++; this.store.save(); this._act('worker'); this._rebuildShop(); });
+    on('imgr', () => { const c = managerCost(b.type); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.manager = true; this._settle(b); this.store.save(); this._act('manager'); this._rebuildShop(); });
     on('ilike', () => { st.likes[this.s.i] = (st.likes[this.s.i] || 0) + 1; this.store.save(); this._renderPanel(); });
   }
-  _settle(b) { const g = pendingEarnings(b, this.store.state.player, Date.now(), this.store.state.seed); b.lastCollect = Date.now(); this.store.earn(g); }
+  _settle(b) { const g = this._pend(b); b.lastCollect = Date.now(); this.store.earn(g); }
+  _pend(b, now = Date.now()) { const st = this.store.state; return pendingEarnings(b, st.player, now, st.seed, !st.noEvents); }   // on the live site the server pays plain income (no random events yet)
+  _act(name, args) { if (this.store.act) this.store.act(name, { building: this.s.i, ...args }); }   // live site: tell the server what you did; it decides the numbers
   _rebuildShop() { const keep = this.camera.position.clone(), tgt = this.controls.target.clone(); this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.scene = new THREE.Scene(); this.scene.environment = this.envMap; this.scene.environmentIntensity = 0.5; this.scene.background = new THREE.Color('#14171f'); this.customers = []; this.pops = []; this.walkers = []; this.renderPass.scene = this.scene; this._buildShop(); this.camera.position.copy(keep); this.controls.target.copy(tgt); this._renderPanel(); }
   _popCoins(text) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(192, 64, (g, w, h) => { g.font = 'bold 40px system-ui'; g.fillStyle = '#ffd23a'; g.strokeStyle = '#6b4a00'; g.lineWidth = 5; g.textAlign = 'center'; g.textBaseline = 'middle'; g.strokeText(text, w / 2, h / 2); g.fillText(text, w / 2, h / 2); }), transparent: true, depthTest: false }));
@@ -398,6 +406,6 @@ export class InteriorSystem {
     }
     // keep the panel numbers fresh and collect automatically when a manager is hired
     this._panelT = (this._panelT || 0) + dt;
-    if (this._panelT > 2) { this._panelT = 0; if (b.manager) { const g = pendingEarnings(b, st.player, Date.now(), st.seed); if (g > 0) { b.lastCollect = Date.now(); this.store.earn(g); this._popCoins('+' + fmt(g)); } } if (!this.ghost) this._renderPanel(); }
+    if (this._panelT > 2) { this._panelT = 0; if (b.manager) { const g = this._pend(b); if (g > 0) { b.lastCollect = Date.now(); this.store.earn(g); this._popCoins('+' + fmt(g)); this._act('collect', { throttle: 30000 }); } } if (!this.ghost) this._renderPanel(); }
   }
 }
