@@ -12,9 +12,9 @@ browser cannot tamper with. This is the plan, and what each piece needs from you
 ## Proposed stack (free to start)
 | Piece | Choice | Why |
 |---|---|---|
-| API | Cloudflare Workers | Free tier, no server to maintain, runs JavaScript (so it can import `economy.js`) |
+| Backend | **Supabase** (Phase 3 is written for it: see `supabase/`) | Free tier, Postgres with row-level security, rules run inside the database |
 | Server code | Supabase Edge Functions (Deno) | Stripe webhooks and comment checks run here, with secrets kept off the website |
-| Sign-in | "Sign in with Google" (Google Identity) | No passwords for you to store |
+| Sign-in | Email magic link (built into Supabase) | No passwords for you to store; visitors confirm they are 13+ |
 | Payments | Stripe Checkout + webhooks | As specified; test mode first |
 | Email receipts | Stripe's built-in receipts (turn on in dashboard) | No email service to run |
 | Admin | A page protected by your Google account only | Refunds, bans, approvals, CSV |
@@ -32,11 +32,10 @@ browser cannot tamper with. This is the plan, and what each piece needs from you
 6. Paid items never involve random rewards.
 
 ## Order of work (each step needs something from you)
-1. **Phase 3** (accounts, claiming a building, points, leaderboards, treasure hunt, predictions): I have not received this spec.
-2. Create a free **Supabase** account (you) and follow supabase/README.md. Phase 3 is ready to run.
-3. Create a **Stripe** account (you) and stay in **test mode**; I write Checkout + webhook code and test with test cards.
-4. Add the Google sign-in client ID (you create it in Google Cloud; I tell you the clicks).
-5. Only when you say so: switch Stripe to live mode, after reviewing the legal drafts in `docs/legal-drafts`.
+1. **Phase 3** (accounts, claiming, points, crates, treasure hunt, predictions, giveaways, admin): front-end demo and the database are written. You create a free **Supabase** account and follow `supabase/README.md`; then I connect the website to it (replacing `store.js` for visitor data) and test.
+2. Create a **Stripe** account (you) and stay in **test mode**; I write Checkout + webhook code (as Supabase Edge Functions) and test with test cards.
+3. Phase 5 server side: move `economy.js` calls into database functions so coins are calculated from timestamps on the server.
+4. Only when you say so: switch Stripe to live mode, after a lawyer reviews `docs/legal-drafts`.
 
 ## Stripe test cards to try later
 Card `4242 4242 4242 4242`, any future date, any CVC, any ZIP. Declined card: `4000 0000 0000 0002`.
