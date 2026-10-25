@@ -769,7 +769,7 @@ function starGeo() {
   return (starGeoCache = g);
 }
 function refreshGolden() {
-  if (goldenGroup) { world.remove(goldenGroup); goldenGroup.traverse(o => { if (o.userData.own && o.geometry) o.geometry.dispose(); }); goldenGroup = null; }
+  if (goldenGroup) { world.remove(goldenGroup); goldenGroup.traverse(o => { if (o.userData.own && o.geometry && o.geometry !== starGeoCache) o.geometry.dispose(); }); goldenGroup = null; }
   if (!visitorOn || !W || !W.S.length) return;
   const g = new THREE.Group(); world.add(g);
   visitor.goldenToday(W.S.length).forEach(i => {
