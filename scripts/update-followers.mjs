@@ -9,9 +9,11 @@ async function getJson(url) {
   return { ok: res.ok, status: res.status, body };
 }
 
+class Skip extends Error {}
+
 async function instagram() {
   const token = process.env.IG_ACCESS_TOKEN;
-  if (!token) throw new Error('IG_ACCESS_TOKEN is not set');
+  if (!token) throw new Skip('IG_ACCESS_TOKEN is not set yet, leaving the Instagram number as it is');
   const url = new URL('https://graph.instagram.com/v21.0/me');
   url.searchParams.set('fields', 'username,followers_count');
   url.searchParams.set('access_token', token);
@@ -22,7 +24,7 @@ async function instagram() {
 
 async function youtube() {
   const key = process.env.YT_API_KEY, id = process.env.YT_CHANNEL_ID;
-  if (!key || !id) throw new Error('YT_API_KEY or YT_CHANNEL_ID is not set');
+  if (!key || !id) throw new Skip('YT_API_KEY or YT_CHANNEL_ID is not set yet, leaving the YouTube number as it is');
   const url = new URL('https://www.googleapis.com/youtube/v3/channels');
   url.searchParams.set('part', 'statistics');
   url.searchParams.set('id', id);
@@ -45,6 +47,7 @@ for (const [name, fetcher] of [['instagram', instagram], ['youtube', youtube]]) 
     live[name] = Math.max(live[name] ?? 0, n);
     console.log(`${name}: ${n}`);
   } catch (err) {
+    if (err instanceof Skip) { console.log(`${name} skipped: ${err.message}`); continue; }
     failed = true; // never print URLs or keys, only the message
     console.error(`${name} failed, keeping ${live[name] ?? 0}: ${err.message}`);
   }
