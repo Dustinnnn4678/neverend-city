@@ -106,7 +106,7 @@ export class InteriorSystem {
   }
   _viewShift() { // slide the room left so the side panel never covers it (wide screens only)
     this.camera.aspect = innerWidth / innerHeight;
-    if (innerWidth > 700) this.camera.setViewOffset(innerWidth, innerHeight, 150, 0, innerWidth, innerHeight); else this.camera.clearViewOffset();
+    if (innerWidth > 700 && !(this.spec && this.spec.noShift && this.kind === 'stage')) this.camera.setViewOffset(innerWidth, innerHeight, 150, 0, innerWidth, innerHeight); else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
   }
   _ndc(e) { const r = this.canvas.getBoundingClientRect(); this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); this.ray.setFromCamera(this.ndc, this.camera); }

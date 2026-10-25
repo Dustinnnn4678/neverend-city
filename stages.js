@@ -1,4 +1,4 @@
-﻿// Extra 3D "stages" that reuse the interior viewer: cosmetics preview, 3D-print miniature, net-worth chart.
+// Extra 3D "stages" that reuse the interior viewer: cosmetics preview, 3D-print miniature, net-worth chart.
 // Everything here runs in the browser. Buying and ordering need the server (see docs/SERVER-PLAN.md), so the buy and
 // order buttons only explain that for now; previewing and downloading an STL work today.
 import * as THREE from 'three';
@@ -155,5 +155,32 @@ export function crateStage(sys, res, again) {
       if (t > 1.5) { const k = Math.min(1, (t - 1.5) / 0.9), e = 1 - Math.pow(1 - k, 3); trinket.scale.setScalar(e * 1.4); trinket.position.y = 1.4 + e * 2.2 + Math.sin(t * 2) * 0.1; trinket.rotation.y = t * 1.6; }
       if (t > 2.4 && !shown && panelEl) { shown = true; const el = panelEl; el.innerHTML = `<h3 style="color:${RC[item.rarity]}">${item.rarity.toUpperCase()}</h3><div class="banner">${item.name}</div><div class="sub">${dupe ? 'You already had this, so it turned into 25 points.' : 'Added to your wardrobe. Open the visitor hub to equip it.'}</div>${sys.store.v.crates > 0 ? `<button class="pri" id="cagain">Open another (${sys.store.v.crates} left)</button>` : '<div class="sub">No crates left. Earn one with a 7-day streak or at the next milestone.</div>'}`; const b = el.querySelector('#cagain'); if (b) b.addEventListener('click', again); sys.notify(`${item.rarity}: ${item.name}`); }
     },
+  });
+}
+
+/* ---------- share card: a story-sized picture of your building ---------- */
+export function shareStage(sys, s, claim, siteUrl) {
+  const { getModel, materials } = sys.ctx, model = getModel(s), bb = modelBounds(model), size = bb.getSize(new THREE.Vector3()), top = bb.max.y, label = claim && claim.optIn ? '@' + claim.username : 'A verified builder';
+  sys.openStage({
+    title: 'Share card', noShift: true, autoRotate: 0.6, camera: { r: Math.max(size.x, size.z, size.y * 0.8) * 1.9 + 14, target: [0, Math.min(top * 0.4, 30), 0], height: 0.5 },
+    build(sc) {
+      sc.background = new THREE.Color('#1a1030'); sc.add(new THREE.HemisphereLight(0xffe9ff, 0x2a2240, 1.0)); const sun = new THREE.DirectionalLight(0xfff1dc, 2.4); sun.position.set(30, 50, 40); sun.castShadow = true; Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 200 }); sc.add(sun);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(size.x, size.z) * 0.95 + 6, Math.max(size.x, size.z) * 0.95 + 8, 1.2, 64), new THREE.MeshStandardMaterial({ color: '#3a2f55', roughness: 0.7 })); base.position.y = -0.6; base.receiveShadow = true; base.userData.own = true; sc.add(base);
+      for (const [mat, geo] of Object.entries(model.parts)) { const m = new THREE.Mesh(geo, materials[mat]); m.castShadow = m.receiveShadow = true; m.userData.shared = true; sc.add(m); }
+    },
+    panel(el) {
+      el.innerHTML = `<h3>Share card</h3><div class="sub">A 1080 x 1920 picture for stories, with your building and "I helped build Neverend City". Turn the building with your mouse first.</div><button class="pri" id="sdl">Download story image</button><div class="sub" id="smsg"></div>`;
+      el.querySelector('#sdl').addEventListener('click', () => sys.ctx.capture(blob => {
+        const img = new Image(); img.onload = () => {
+          const c = document.createElement('canvas'); c.width = 1080; c.height = 1920; const g = c.getContext('2d'), grd = g.createLinearGradient(0, 0, 0, 1920); grd.addColorStop(0, '#1a1030'); grd.addColorStop(1, '#0b1226'); g.fillStyle = grd; g.fillRect(0, 0, 1080, 1920);
+          const side = Math.min(img.width, img.height), sx = (img.width - side) / 2, sy = (img.height - side) / 2; g.save(); g.beginPath(); g.roundRect(40, 420, 1000, 1000, 40); g.clip(); g.drawImage(img, sx, sy, side, side, 40, 420, 1000, 1000); g.restore();
+          g.textAlign = 'center'; g.fillStyle = '#d9c8ff'; g.font = '600 46px system-ui, sans-serif'; g.fillText('I HELPED BUILD', 540, 250); g.fillStyle = '#ffffff'; g.font = '700 96px system-ui, sans-serif'; g.fillText('NEVEREND CITY', 540, 360);
+          g.fillStyle = '#9bffb4'; g.font = '700 84px system-ui, sans-serif'; g.fillText(label.slice(0, 22), 540, 1560); g.fillStyle = '#c8d0e8'; g.font = '500 42px system-ui, sans-serif'; g.fillText(`Building #${s.i + 1}${claim && claim.status === 'verified' ? '  ·  verified ✓' : ''}`, 540, 1630);
+          g.fillStyle = '#8fa0c8'; g.font = '500 36px system-ui, sans-serif'; g.fillText(siteUrl, 540, 1800);
+          c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `neverend-city-building-${s.i + 1}.png`; document.body.appendChild(a); a.click(); a.remove(); sys.notify('Share card saved. Post it to your story!'); }, 'image/png');
+        }; img.src = URL.createObjectURL(blob);
+      }));
+    },
+    update() {},
   });
 }

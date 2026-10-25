@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Neverend City admin</title>
+<!-- STATUS: written but not yet tested against a real Supabase project. Only accounts marked is_admin in the database can do anything here. -->
+<style>
+  body{margin:0;background:#0b0f1a;color:#eaf0ff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}
+  main{max-width:960px;margin:0 auto;padding:18px}h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:22px 0 8px}
+  .card{background:#131a2b;border:1px solid #26314d;border-radius:12px;padding:12px;margin-bottom:10px}
+  button{background:#1d2a4a;color:#eaf0ff;border:1px solid #3a4a75;border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit}button.bad{border-color:#a33}button.good{border-color:#2a8a4a}
+  input,select{background:#0b0f1a;color:inherit;border:1px solid #3a4a75;border-radius:8px;padding:7px;font:inherit}
+  table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-bottom:1px solid #26314d;text-align:left;vertical-align:top}.dim{opacity:.65}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}nav button.on{background:#2f6aa8}
+</style></head>
+<body><main>
+<h1>Neverend City · admin</h1>
+<div id="auth" class="card"></div>
+<div id="app" style="display:none">
+  <nav id="nav"></nav>
+  <div id="view"></div>
+</div>
+</main>
+<script type="module">
+import { SUPABASE } from './config.js';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+const $ = id => document.getElementById(id), esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+if (!SUPABASE.url || !SUPABASE.anonKey) { $('auth').innerHTML = '<b>Not set up yet.</b> Create your Supabase project and fill in <code>config.js</code> (see <code>supabase/README.md</code>).'; throw new Error('no config'); }
+const db = createClient(SUPABASE.url, SUPABASE.anonKey);
+let tab = 'claims';
+
+async function boot() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) { $('auth').innerHTML = '<div class="row"><input id="em" type="email" placeholder="admin email" size="30"><button id="send">Email me a sign-in link</button><span class="dim" id="msg"></span></div>'; $('send').onclick = async () => { const { error } = await db.auth.signInWithOtp({ email: $('em').value, options: { emailRedirectTo: location.href } }); $('msg').textContent = error ? error.message : 'Check your email.'; }; return; }
+  const { data: isAdmin } = await db.rpc('is_admin');
+  if (!isAdmin) { $('auth').innerHTML = `Signed in as ${esc(session.user.email)} but this account is not an admin. <button id="out">Sign out</button>`; $('out').onclick = async () => { await db.auth.signOut(); location.reload(); }; return; }
+  $('auth').innerHTML = `Signed in as ${esc(session.user.email)} <button id="out">Sign out</button>`; $('out').onclick = async () => { await db.auth.signOut(); location.reload(); }; $('app').style.display = 'block'; render();
+}
+const TABS = [['claims', 'Claims'], ['giveaways', 'Giveaways'], ['streets', 'Street names'], ['cosmetics', 'Cosmetics and crate odds'], ['milestone', 'Milestones and events'], ['stats', 'Stats']];
+function render() { $('nav').innerHTML = TABS.map(([id, n]) => `<button data-t="${id}" class="${tab === id ? 'on' : ''}">${n}</button>`).join(''); $('nav').querySelectorAll('button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); }); ({ claims, giveaways, streets, cosmetics, milestone, stats })[tab](); }
+
+async function claims() {
+  const { data, error } = await db.from('claims').select('*').order('created_at', { ascending: false }).limit(200); if (error) return $('view').innerHTML = esc(error.message);
+  $('view').innerHTML = `<h2>Claims</h2><div class="dim">Instagram comments cannot be checked automatically yet: look at your latest post, find the code, then press Verify. YouTube is checked by the verify-youtube function.</div><div class="card"><table><tr><th>Building</th><th>Who</th><th>Platform</th><th>Code</th><th>Status</th><th></th></tr>${data.map(c => `<tr><td>#${c.building + 1}</td><td>@${esc(c.username)} ${c.opt_in ? '' : '<span class="dim">(hidden)</span>'}</td><td>${c.platform}</td><td><code>${esc(c.code)}</code></td><td>${c.status}</td><td><button class="good" data-v="${c.id}">Verify</button> <button class="bad" data-r="${c.id}">Remove</button></td></tr>`).join('')}</table></div>`;
+  $('view').querySelectorAll('[data-v]').forEach(b => b.onclick = async () => { const { error } = await db.rpc('admin_verify_claim', { p_id: +b.dataset.v }); if (error) alert(error.message); claims(); });
+  $('view').querySelectorAll('[data-r]').forEach(b => b.onclick = async () => { const reason = prompt('Reason for removing (kept in a log):'); if (reason === null) return; const { error } = await db.rpc('admin_remove_claim', { p_id: +b.dataset.r, p_reason: reason }); if (error) alert(error.message); claims(); });
+}
+async function giveaways() {
+  const { data } = await db.from('giveaways').select('*').order('id', { ascending: false });
+  $('view').innerHTML = `<h2>Giveaways</h2><div class="card"><b>New giveaway</b> <div class="dim">No purchase necessary. Publish your official rules page first and follow Instagram's promotion guidelines. Entrants are verified building owners who verified before the close time.</div><div class="row" style="margin-top:8px"><input id="gt" placeholder="Title"><input id="gu" placeholder="Official rules page URL" size="34"><input id="gc" type="datetime-local"><input id="gn" type="number" min="1" value="1" style="width:70px"><button id="gadd">Create</button></div></div>
+${(data || []).map(g => `<div class="card"><b>${esc(g.title)}</b> <span class="dim">closes ${new Date(g.closes_at).toLocaleString()} · ${g.winner_count} winner(s)</span><div class="dim">Seed fingerprint: <code>${esc(g.seed_hash || 'not committed yet')}</code></div>${g.drawn_at ? `<div>Drawn ${new Date(g.drawn_at).toLocaleString()}. Seed: <code>${esc(g.seed)}</code></div>` : `<div class="row" style="margin-top:6px"><button data-c="${g.id}">1. Commit (publish fingerprint)</button><button data-d="${g.id}" class="good">2. Draw winners</button></div>`}<div id="log${g.id}" class="dim"></div></div>`).join('')}`;
+  $('gadd').onclick = async () => { const { error } = await db.from('giveaways').insert({ title: $('gt').value, rules_url: $('gu').value, closes_at: new Date($('gc').value).toISOString(), winner_count: +$('gn').value }); if (error) alert(error.message); giveaways(); };
+  $('view').querySelectorAll('[data-c]').forEach(b => b.onclick = async () => { const { data, error } = await db.rpc('admin_commit_giveaway', { p_id: +b.dataset.c }); alert(error ? error.message : 'Fingerprint published: ' + data + '\nAnnounce it before you draw.'); giveaways(); });
+  $('view').querySelectorAll('[data-d]').forEach(b => b.onclick = async () => { if (!confirm('Draw now? This cannot be undone.')) return; const { data, error } = await db.rpc('admin_draw_giveaway', { p_id: +b.dataset.d }); alert(error ? error.message : 'Winners:\n' + data.map(w => `#${w.building + 1} @${w.username} (${w.platform})`).join('\n')); giveaways(); });
+}
+async function streets() {
+  const { data } = await db.from('street_requests').select('*').order('created_at', { ascending: false });
+  $('view').innerHTML = `<h2>Street name requests</h2><div class=\"card\"><table><tr><th>Name</th><th>Status</th><th></th></tr>${(data || []).map(r => `<tr><td>${esc(r.street_name)}</td><td>${r.status}</td><td><button class=\"good\" data-a=\"${r.id}\">Approve</button> <button class=\"bad\" data-x=\"${r.id}\">Reject</button></td></tr>`).join('')}</table></div>`;
+  $('view').querySelectorAll('[data-a]').forEach(b => b.onclick = async () => { await db.rpc('admin_review_street', { p_id: +b.dataset.a, p_approve: true }); streets(); });
+  $('view').querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { await db.rpc('admin_review_street', { p_id: +b.dataset.x, p_approve: false }); streets(); });
+}
+async function cosmetics() {
+  const [o, c] = await Promise.all([db.from('crate_odds').select('*').order('sort'), db.from('cosmetics').select('*').order('level')]);
+  $('view').innerHTML = `<h2>Crate odds</h2><div class="card">${(o.data || []).map(r => `<div class="row">${r.rarity}: <input data-p="${r.rarity}" value="${r.p}" size="5"></div>`).join('')}<div class="row" style="margin-top:8px"><button id="osave">Save odds</button><span class="dim">Must add up to 1.00 (60/30/9/1 = 0.6, 0.3, 0.09, 0.01). The site shows these odds to everyone.</span></div></div>
+<h2>Cosmetics</h2><div class="card"><table><tr><th>Name</th><th>Rarity</th><th>Level</th><th>Cost</th><th>Source</th><th>On</th></tr>${(c.data || []).map(x => `<tr><td>${esc(x.name)}</td><td>${x.rarity}</td><td>${x.level}</td><td><input data-cost="${x.id}" value="${x.cost ?? ''}" size="5" ${x.source === 'crate' ? 'disabled' : ''}></td><td>${x.source}</td><td><input type="checkbox" data-en="${x.id}" ${x.enabled ? 'checked' : ''}></td></tr>`).join('')}</table><button id="csave" style="margin-top:8px">Save cosmetics</button></div>`;
+  $('osave').onclick = async () => { const rows = [...$('view').querySelectorAll('[data-p]')].map(i => ({ rarity: i.dataset.p, p: +i.value })); const sum = rows.reduce((a, r) => a + r.p, 0); if (Math.abs(sum - 1) > 1e-6) return alert('Odds add up to ' + sum + ', they must add up to 1.'); for (const r of rows) await db.from('crate_odds').update({ p: r.p }).eq('rarity', r.rarity); alert('Saved'); };
+  $('csave').onclick = async () => { for (const i of $('view').querySelectorAll('[data-cost]')) if (!i.disabled) await db.from('cosmetics').update({ cost: +i.value }).eq('id', i.dataset.cost); for (const i of $('view').querySelectorAll('[data-en]')) await db.from('cosmetics').update({ enabled: i.checked }).eq('id', i.dataset.en); alert('Saved'); };
+}
+async function milestone() {
+  $('view').innerHTML = `<h2>When the city reaches a milestone</h2><div class="card"><div class="dim">Records it, starts the 10-minute double-points event, gives every player a crate, and pays everyone who predicted the right day.</div><div class="row" style="margin-top:8px"><input id="ms" type="number" placeholder="e.g. 400"><button id="msb" class="good">Settle milestone</button></div></div><h2>Today's golden objects</h2><div class="card"><div class="row"><input id="gt2" type="number" placeholder="how many buildings exist"><button id="gb">Create today's 3</button></div></div>`;
+  $('msb').onclick = async () => { const { error } = await db.rpc('admin_settle_milestone', { p_milestone: +$('ms').value }); alert(error ? error.message : 'Done'); };
+  $('gb').onclick = async () => { const { data, error } = await db.rpc('admin_ensure_golden', { p_day: Math.floor(Date.now() / 86400000), p_total: +$('gt2').value }); alert(error ? error.message : 'Today: ' + data.join(', ')); };
+}
+async function stats() {
+  const [p, c, v] = await Promise.all([db.from('profiles').select('id', { count: 'exact', head: true }), db.from('claims').select('id', { count: 'exact', head: true }), db.from('claims').select('id', { count: 'exact', head: true }).eq('status', 'verified')]);
+  $('view').innerHTML = `<h2>Stats</h2><div class="card">Players: <b>${p.count ?? '?'}</b><br>Claims: <b>${c.count ?? '?'}</b> (verified ${v.count ?? '?'})</div>`;
+}
+boot();
+</script></body></html>

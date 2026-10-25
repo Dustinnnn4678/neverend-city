@@ -12,7 +12,7 @@ import { makeMaterials, getModel } from './models.js';
 import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } from './infra.js';
 import { InteriorSystem, canEnter } from './interior.js';
 import { store } from './store.js';
-import { previewStage, statsStage, crateStage, roofItem, labelTex } from './stages.js';
+import { previewStage, statsStage, crateStage, shareStage, roofItem, labelTex } from './stages.js';
 import { Visitor } from './visitor.js';
 import { Explore } from './explore.js';
 import { BUSINESSES, stageOf } from './economy.js';
@@ -686,13 +686,13 @@ const demo = params.has('demo') || dev;
 const fadeEl = $('fade');
 const interior = new InteriorSystem({
   renderer, renderPass, canvas, envMap: scene.environment, store, getNight: () => windowF, notify: msg => toast(msg), getModel, materials,
-  openPreview: sys => previewStage(sys, sys.s),
+  openPreview: sys => previewStage(sys, sys.s), capture: cb => { captureCb = cb; },
   onExit: () => {
     fadeEl.classList.add('on');
     setTimeout(() => { renderPass.scene = scene; renderPass.camera = camera; fly = null; controls.enabled = true; $('hud').style.display = ''; $('dev').style.visibility = ''; labelEl.style.opacity = 0; fadeEl.classList.remove('on'); refreshBizFx(); }, 450);
   },
 });
-let entering = false;
+let entering = false, captureCb = null;
 function openBuilding(s) {
   if (entering || interior.active) return; entering = true;
   flyTo(s.x, 4, s.z, 44, 6); toast('Going inside…');
@@ -761,7 +761,7 @@ function locateGoldenStar(i) { const s = W && W.S[i]; if (!s) return; flyTo(s.x,
 function overlayStage(fn) { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on'); setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; fn(); fadeEl.classList.remove('on'); entering = false; }, 600); }
 const visitor = new Visitor({
   store, notify: msg => toast(msg), applyFx: () => refreshVisitorFx(),
-  getCtx: () => ({ W, count, next: nextMilestone(count), fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => toast('Share cards are coming in the next step.') }),
+  getCtx: () => ({ W, count, next: nextMilestone(count), fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => overlayStage(() => shareStage(interior, W.S[i], visitor.v.claim, location.host + location.pathname.replace(/\/$/, ''))) }),
   showCrate: res => overlayStage(() => crateStage(interior, res, () => { const r = visitor.openOne(); if (r) crateStage(interior, r, () => {}); })),
   locateGolden: locateGoldenStar,
 });
@@ -814,7 +814,7 @@ function frame(nowMs) {
   const dt = Math.min((nowMs - last) / 1000, 0.1); last = nowMs; const now = nowMs / 1000;
   if (mode === 'auto') { tDay = (tDay + dt / DAY_SECONDS) % 1; tTarget = tDay; } else { const diff = ((tTarget - tDay + 1.5) % 1) - 0.5; tDay = (tDay + diff * Math.min(1, dt * 1.6) + 1) % 1; }
   updateRain(dt, now); applyTime(tDay);
-  if (interior.active) { renderer.toneMappingExposure = 0.9; bloom.strength = 0.35; interior.update(dt); composer.render(); return; }
+  if (interior.active) { renderer.toneMappingExposure = 0.9; bloom.strength = 0.35; interior.update(dt); composer.render(); if (captureCb) { const cb = captureCb; captureCb = null; canvas.toBlob(cb, 'image/png'); } return; }
   if (!fly && !explore.active) {
     const off = camera.position.clone().sub(controls.target), sph = new THREE.Spherical().setFromVector3(off); introT = Math.min(introT + dt / 6, 1); const k = easeOut(introT);
     if (introT < 1 && !userTouched) { sph.radius = lerp(desiredDist * 1.9, desiredDist, k); sph.phi = lerp(0.62, 1.15, k); } else if (!userTouched) sph.radius += (desiredDist - sph.radius) * Math.min(1, dt * 0.8);

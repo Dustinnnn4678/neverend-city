@@ -138,7 +138,7 @@ ${c.status === 'verified' ? '<div class="dim">Your name plate shows a verified b
       el.innerHTML = `<div class="dim">Leaderboards need the server. Demo view shows only you.</div>${[['Top points', fmt(v.points) + ' pts'], ['Longest streak', v.bestStreak + ' days'], ['Most referrals', v.referrals]].map(([a, b]) => `<div class="dim">${a}</div><div class="row"><span>#1 ${v.claim && v.claim.optIn ? '@' + esc(v.claim.username) : 'You'}</span><b>${b}</b></div>`).join('')}`;
     }
     if (this.tab === 'privacy') {
-      el.innerHTML = `<div class="banner">Your data stays in this browser in demo mode. In the real version emails are never shown publicly.</div><div class="row"><span>Show my username publicly</span><button id="vopt">${v.claim && v.claim.optIn ? 'On' : 'Off'}</button></div><button id="vdel">Delete my account and data</button><div class="dim">Draft privacy policy: docs/legal-drafts/privacy-policy.md</div>`;
+      el.innerHTML = `<div class="banner">Your data stays in this browser in demo mode. In the real version emails are never shown publicly.</div><div class="row"><span>Show my username publicly</span><button id="vopt">${v.claim && v.claim.optIn ? 'On' : 'Off'}</button></div><button id="vdel">Delete my account and data</button><a href="privacy.html" target="_blank" style="color:#8fc4ff">Read the privacy page (draft)</a>`;
       bind('#vopt', () => { if (v.claim) { v.claim.optIn = !v.claim.optIn; this.save(); this.applyFx(); this.render(); } }); bind('#vdel', () => { if (confirm('Delete your visitor data from this browser?')) { this.store.reset(); this.applyFx(); this.refreshBadge(); this.render(); } });
     }
   }

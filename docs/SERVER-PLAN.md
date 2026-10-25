@@ -13,7 +13,7 @@ browser cannot tamper with. This is the plan, and what each piece needs from you
 | Piece | Choice | Why |
 |---|---|---|
 | API | Cloudflare Workers | Free tier, no server to maintain, runs JavaScript (so it can import `economy.js`) |
-| Database | Cloudflare D1 (SQLite) | Free tier, simple tables |
+| Server code | Supabase Edge Functions (Deno) | Stripe webhooks and comment checks run here, with secrets kept off the website |
 | Sign-in | "Sign in with Google" (Google Identity) | No passwords for you to store |
 | Payments | Stripe Checkout + webhooks | As specified; test mode first |
 | Email receipts | Stripe's built-in receipts (turn on in dashboard) | No email service to run |
@@ -33,7 +33,7 @@ browser cannot tamper with. This is the plan, and what each piece needs from you
 
 ## Order of work (each step needs something from you)
 1. **Phase 3** (accounts, claiming a building, points, leaderboards, treasure hunt, predictions): I have not received this spec.
-2. Create a free **Cloudflare** account (you), I write the Worker and database setup, you run one deploy command I give you.
+2. Create a free **Supabase** account (you) and follow supabase/README.md. Phase 3 is ready to run.
 3. Create a **Stripe** account (you) and stay in **test mode**; I write Checkout + webhook code and test with test cards.
 4. Add the Google sign-in client ID (you create it in Google Cloud; I tell you the clicks).
 5. Only when you say so: switch Stripe to live mode, after reviewing the legal drafts in `docs/legal-drafts`.
