@@ -19,4 +19,8 @@ export const store = {
   earn(n) { this.state.coins += Math.max(0, Math.floor(n)); this.save(); },
   furnitureOf(id) { return (this.state.furniture[id] ||= []); },
   nextUid() { return this.state.uid++; },
+  snap(v, force) { // remember net worth over time for the stats chart
+    const h = (this.state.history ||= []), last = h[h.length - 1];
+    if (force || !last || (Date.now() - last.t > 60000 && last.v !== v)) { h.push({ t: Date.now(), v }); if (h.length > 200) h.shift(); this.save(); }
+  },
 };

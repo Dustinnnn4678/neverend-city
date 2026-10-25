@@ -58,8 +58,9 @@ const SHIRTS = ['#c9433b', '#3b6fb0', '#e0b43a', '#4f9b5e', '#7b4fa3', '#e8e8e8'
 
 /* ---------- the interior system ---------- */
 export class InteriorSystem {
-  constructor({ renderer, renderPass, canvas, envMap, store, getNight, onExit, notify }) {
-    Object.assign(this, { renderer, renderPass, canvas, envMap, store, getNight, onExit, notify });
+  constructor(opts) {
+    const { renderer, renderPass, canvas, envMap, store, getNight, onExit, notify } = opts;
+    Object.assign(this, { renderer, renderPass, canvas, envMap, store, getNight, onExit, notify }); this.ctx = opts;
     this.camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 300);
     this.controls = new OrbitControls(this.camera, canvas); this.controls.enabled = false; this.controls.enableDamping = true; this.controls.enablePan = false;
     this.controls.minDistance = 5; this.controls.maxDistance = 22; this.controls.maxPolarAngle = 1.45; this.controls.minPolarAngle = 0.3;
@@ -109,7 +110,7 @@ export class InteriorSystem {
     this.camera.updateProjectionMatrix();
   }
   _ndc(e) { const r = this.canvas.getBoundingClientRect(); this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); this.ray.setFromCamera(this.ndc, this.camera); }
-  _refreshCoins() { const s = this.store.state; this.ui.querySelector('#icoins').textContent = fmt(s.coins); this.ui.querySelector('#inw').textContent = fmt(netWorth(s)); }
+  _refreshCoins() { const s = this.store.state, nw = netWorth(s); this.ui.querySelector('#icoins').textContent = fmt(s.coins); this.ui.querySelector('#inw').textContent = fmt(nw); this.store.snap(nw); }
 
   /* ----- enter / exit ----- */
   enter(s) {
@@ -125,9 +126,24 @@ export class InteriorSystem {
     this.active = true; this.ui.style.display = 'block'; this._refreshCoins(); this._renderPanel();
     this.t = 0; this.spawnT = 2;
   }
+  _disposeScene() { if (this.scene) this.scene.traverse(o => { if (o.geometry && !o.userData.shared) o.geometry.dispose(); }); }
   exit() {
-    if (!this.active) return; this._cancelGhost(); this.active = false; this.controls.enabled = false; this.ui.style.display = 'none';
-    this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.scene = null; this.onExit && this.onExit();
+    if (!this.active) return; this._cancelGhost(); const back = this.returnTo; this.returnTo = null; this.controls.autoRotate = false; this.controls.minDistance = 5; this.controls.maxDistance = 22;
+    this._disposeScene(); this.scene = null; this.kind = 'home';
+    if (back) { this.active = false; this.enter(back); return; }
+    this.active = false; this.controls.enabled = false; this.ui.style.display = 'none'; this.camera.clearViewOffset(); this.onExit && this.onExit();
+  }
+  /* a generic 3D stage (cosmetics preview, 3D print, stats chart) shown with the same viewer and side panel */
+  openStage(spec) {
+    if (this.active) { this._cancelGhost(); this._disposeScene(); }
+    this.kind = 'stage'; this.spec = spec; this.returnTo = spec.returnTo || null;
+    this.scene = new THREE.Scene(); this.scene.environment = this.envMap; this.scene.environmentIntensity = 0.7;
+    this.people = []; this.customers = []; this.pops = []; this.placed = []; this.ghost = null; this.sel = null; this.walkers = []; this.glass = []; this.biz = null; this.selBox = null;
+    spec.build(this.scene);
+    const c = spec.camera; this.camera.position.set(c.r * 0.8, c.r * c.height + 4, c.r * 0.8); this.controls.target.set(...c.target);
+    Object.assign(this.controls, { minDistance: 3, maxDistance: c.r * 3, autoRotate: true, autoRotateSpeed: spec.autoRotate || 0.6, enabled: true }); this.controls.update();
+    this.renderPass.scene = this.scene; this.renderPass.camera = this.camera; this._viewShift();
+    this.active = true; this.ui.style.display = 'block'; this.t = 0; this._renderPanel();
   }
 
   /* ----- shared room shell ----- */
@@ -238,17 +254,18 @@ export class InteriorSystem {
   /* ----- panels ----- */
   _renderPanel() {
     const p = this.panel, st = this.store.state; this._refreshCoins();
+    if (this.kind === 'stage') { this.spec.panel(p); return; }
     if (this.kind === 'home') {
       const likes = st.likes[this.s.i] || 0;
       let h = `<h3>Home</h3><div class="sub">Your coins buy furniture. Click an item to buy, move the mouse over the floor, click to place, press R to rotate, Esc to cancel. Selling gives back ${Math.round(SELL_BACK * 100)}%.</div>`;
       if (this.ghost) h += `<div class="banner">Placing: ${FURNITURE[this.ghost.id].name}${this.ghost.moving ? '' : ` (${FURNITURE[this.ghost.id].price} coins)`}</div><button id="irot">Rotate (R)</button><button id="icancel">Cancel (Esc)</button>`;
       else if (this.sel) { const it = this.sel.userData.item, f = FURNITURE[it.id]; h += `<div class="banner">Selected: ${f.name}</div><button id="imove">Move</button><button id="isell">Sell for ${Math.floor(f.price * SELL_BACK)} coins</button>`; }
       h += `<div class="tag">Furniture shop</div>` + Object.entries(FURNITURE).map(([id, f]) => `<button class="item" data-buy="${id}"><span>${f.name}</span><b>${f.price}</b></button>`).join('');
-      h += `<div class="tag">Visitors</div><button id="ilike">♥ Like this home (${likes})</button><div class="sub">Visits: ${st.visits[this.s.i] || 0}</div>`;
+      h += `<div class="tag">Visitors</div><button id="ilike">♥ Like this home (${likes})</button><div class="sub">Visits: ${st.visits[this.s.i] || 0}</div><div class="tag">Extras</div><button id="iprev">Cosmetics and 3D-print preview</button>`;
       p.innerHTML = h;
       p.querySelectorAll('[data-buy]').forEach(b => b.addEventListener('click', () => this.startPlace(b.dataset.buy)));
       const on = (id, fn) => { const el = p.querySelector('#' + id); if (el) el.addEventListener('click', fn); };
-      on('irot', () => this._rotateGhost()); on('icancel', () => this._cancelGhost()); on('imove', () => this._moveSel()); on('isell', () => this._sell());
+      on('iprev', () => this.ctx.openPreview(this)); on('irot', () => this._rotateGhost()); on('icancel', () => this._cancelGhost()); on('imove', () => this._moveSel()); on('isell', () => this._sell());
       on('ilike', () => { st.likes[this.s.i] = (st.likes[this.s.i] || 0) + 1; this.store.save(); this._renderPanel(); });
     } else this._renderShopPanel();
   }
@@ -296,7 +313,8 @@ export class InteriorSystem {
       let h = `<h3>Open a business</h3><div class="sub">One business per building. Your owner level is <b>${lvOwner}</b>; it rises as your net worth grows. Free players can reach every business type.</div>`;
       if (others >= 1) h += `<div class="banner">You already run a business elsewhere. A second business slot will be a paid extra later.</div>`;
       for (const [type, d] of Object.entries(BUSINESSES)) { const cost = type === 'lemonade' ? 0 : d.base * 5, locked = lvOwner < d.unlockOwner; h += `<button class="item" data-open="${type}" ${locked || others >= 1 ? 'disabled' : ''}><span>${d.name}<br><small class="tag">${locked ? 'Owner level ' + d.unlockOwner : fmt(d.base) + ' coins/hour at level 1'}</small></span><b>${cost ? fmt(cost) : 'Free'}</b></button>`; }
-      p.innerHTML = h;
+      h += `<div class="tag">Extras</div><button id="iprev">Cosmetics and 3D-print preview</button>`;
+      p.innerHTML = h; p.querySelector('#iprev').addEventListener('click', () => this.ctx.openPreview(this));
       p.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => { const type = el.dataset.open, cost = type === 'lemonade' ? 0 : BUSINESSES[type].base * 5; if (!this.store.spend(cost)) { this.notify('Not enough City Coins.'); return; } st.business[this.s.i] = { type, level: 1, workers: 0, manager: false, lastCollect: Date.now(), fixedAt: 0 }; this.store.save(); this.s.bizType = type; this._rebuildShop(); }));
       return;
     }
@@ -311,9 +329,10 @@ export class InteriorSystem {
     h += `<button class="item" id="iup" ${b.level >= MAX_LEVEL ? 'disabled' : ''}><span>Upgrade to level ${b.level + 1}<br><small class="tag">+ income, more tables${stageOf(b.level + 1).name !== stage.name ? ', becomes a ' + stageOf(b.level + 1).name : ''}</small></span><b>${fmt(next)}</b></button>`;
     h += `<button class="item" id="iwork" ${b.workers >= workerSlots(b.level) ? 'disabled' : ''}><span>Hire a worker (${b.workers}/${workerSlots(b.level)})</span><b>${fmt(workerCost(b.type, b.workers))}</b></button>`;
     h += `<button class="item" id="imgr" ${b.manager ? 'disabled' : ''}><span>${b.manager ? 'Manager hired: income collects automatically' : 'Hire a manager (auto-collect)'}</span><b>${b.manager ? '✓' : fmt(managerCost(b.type))}</b></button>`;
-    h += `<div class="tag">Visitors</div><button id="ilike">♥ Like this business (${st.likes[this.s.i] || 0})</button><div class="sub">Visits: ${st.visits[this.s.i] || 0}</div>`;
+    h += `<div class="tag">Visitors</div><button id="ilike">♥ Like this business (${st.likes[this.s.i] || 0})</button><div class="sub">Visits: ${st.visits[this.s.i] || 0}</div><div class="tag">Extras</div><button id="iprev">Cosmetics and 3D-print preview</button>`;
     p.innerHTML = h;
     const on = (id, fn) => { const el = p.querySelector('#' + id); if (el) el.addEventListener('click', fn); };
+    on('iprev', () => this.ctx.openPreview(this));
     on('icollect', () => { const g = pendingEarnings(b, st.player, Date.now(), st.seed); b.lastCollect = Date.now(); this.store.earn(g); this._popCoins('+' + fmt(g)); this._renderPanel(); });
     on('ifix', () => { b.fixedAt = Date.now(); this.store.save(); this._renderPanel(); });
     on('iup', () => { const c = upgradeCost(b.type, b.level); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); this._settle(b); b.level++; this.store.save(); this._rebuildShop(); });
@@ -332,6 +351,7 @@ export class InteriorSystem {
   update(dt) {
     if (!this.active) return; this.t += dt; const t = this.t, night = this.getNight(), st = this.store.state;
     this.controls.update();
+    if (this.kind === 'stage') { this.spec.update && this.spec.update(dt, t); return; }
     const sky = new THREE.Color('#9fd0ff').lerp(new THREE.Color('#0b1226'), night); (this.glass || []).forEach(m => m.color.copy(sky));
     const lem = this.biz && this.biz.type === 'lemonade', lum = this.kind === 'home' ? 1 : lem ? 0.85 : 0.5;
     if (this.hemi) this.hemi.intensity = THREE.MathUtils.lerp(lem ? 1.1 : 0.9, 0.35, night) * lum;

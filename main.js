@@ -12,6 +12,7 @@ import { makeMaterials, getModel } from './models.js';
 import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } from './infra.js';
 import { InteriorSystem, canEnter } from './interior.js';
 import { store } from './store.js';
+import { previewStage, statsStage } from './stages.js';
 
 /* ---------- basics ---------- */
 const POLL_MS = 30000, DAY_SECONDS = 150, MAX_N = 100000;
@@ -653,7 +654,8 @@ addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if 
 const demo = params.has('demo') || dev;
 const fadeEl = $('fade');
 const interior = new InteriorSystem({
-  renderer, renderPass, canvas, envMap: scene.environment, store, getNight: () => windowF, notify: msg => toast(msg),
+  renderer, renderPass, canvas, envMap: scene.environment, store, getNight: () => windowF, notify: msg => toast(msg), getModel, materials,
+  openPreview: sys => previewStage(sys, sys.s),
   onExit: () => {
     fadeEl.classList.add('on');
     setTimeout(() => { renderPass.scene = scene; renderPass.camera = camera; fly = null; controls.enabled = true; $('hud').style.display = ''; $('dev').style.visibility = ''; labelEl.style.opacity = 0; fadeEl.classList.remove('on'); }, 450);
@@ -679,6 +681,8 @@ canvas.addEventListener('pointerup', e => {
   if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
 });
 if (demo) setTimeout(() => toast('Demo: click a house or shop to go inside'), 4000);
+if (demo) { const sb = $('stats'); sb.style.display = ''; sb.addEventListener('click', () => { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on');
+  setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; statsStage(interior); fadeEl.classList.remove('on'); entering = false; }, 600); }); }
 
 /* ---------- loop ---------- */
 const labelEl = $('newest'), proj = new THREE.Vector3(), beam = (() => {
