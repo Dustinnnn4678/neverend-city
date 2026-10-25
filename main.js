@@ -778,7 +778,7 @@ function updateVisitorFx(t, now) {
 function locateGoldenStar(i) { const s = W && W.S[i]; if (!s) return; flyTo(s.x, s.model.topY + 4, s.z, 70, 5); toast('Look for the spinning gold star!'); }
 function overlayStage(fn) { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on'); setTimeout(() => { fly = null; controls.enabled = false; $('hud').style.display = 'none'; $('dev').style.visibility = 'hidden'; fn(); fadeEl.classList.remove('on'); entering = false; }, 600); }
 const visitor = new Visitor({
-  store, remote: useRemote ? new Remote() : null, notify: msg => toast(msg), applyFx: () => refreshVisitorFx(), onClaims: c => refreshClaimPlates(c), onEvent: ms => { if (ms && Date.now() - ms < 600000 && !liveEv) startLiveEvent(ms); },
+  store, remote: useRemote ? new Remote() : null, notify: msg => toast(msg), applyFx: () => { refreshVisitorFx(); refreshGolden(); }, onClaims: c => { refreshClaimPlates(c); refreshGolden(); }, onEvent: ms => { if (ms && Date.now() - ms < 600000 && !liveEv) startLiveEvent(ms); },
   getCtx: () => ({ W, count, next: nextMilestone(count), fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => overlayStage(() => shareStage(interior, W.S[i], visitor.v.claim, location.host + location.pathname.replace(/\/$/, ''))) }),
   showCrate: res => overlayStage(() => crateStage(interior, res, () => { const r = visitor.openOne(); if (r) crateStage(interior, r, () => {}); })),
   locateGolden: locateGoldenStar,
