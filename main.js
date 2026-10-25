@@ -13,6 +13,7 @@ import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } f
 import { InteriorSystem, canEnter } from './interior.js';
 import { store } from './store.js';
 import { previewStage, statsStage } from './stages.js';
+import { BUSINESSES, stageOf } from './economy.js';
 
 /* ---------- basics ---------- */
 const POLL_MS = 30000, DAY_SECONDS = 150, MAX_N = 100000;
@@ -378,6 +379,7 @@ function buildWorld(n, firstNew) {
   applyPlatform();
   fitCamera();
   updateChunks(true);
+  refreshBizFx();
 }
 function updateChunks(force) {
   if (!W || !W.chunked) return;
@@ -650,6 +652,33 @@ $('devr').addEventListener('change', e => { devActive = true; setCount(Math.roun
 $('devn').addEventListener('change', e => { devActive = true; setCount(Number(e.target.value) || 0); });
 addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.key === '+' || e.key === '=') { devActive = true; setCount(count + 1); } });
 
+/* ---------- demo businesses show up outdoors: sign, extra floors, and pedestrians who gather at busy shops ---------- */
+let bizFx = null;
+function refreshBizFx() {
+  if (bizFx) { world.remove(bizFx.group); bizFx.group.traverse(o => { if (o.isInstancedMesh) o.dispose(); else if (o.geometry && o.userData.own) o.geometry.dispose(); }); bizFx = null; }
+  if (!demo || !W) return;
+  const group = new THREE.Group(), people = []; world.add(group);
+  for (const [idx, b] of Object.entries(store.state.business)) {
+    const s = W.S[+idx]; if (!s) continue;
+    const d = BUSINESSES[b.type], st = stageOf(b.level).name, rank = st === 'stand' ? 0 : st === 'shop' ? 1 : 2, yaw = s.yaw * Math.PI / 2, fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(4 + rank * 2, 1.1 + rank * 0.3, 0.3), new THREE.MeshBasicMaterial({ color: new THREE.Color(d.color).multiplyScalar(1.6), toneMapped: false }));
+    sign.position.set(s.x + fx * 6.6, 4.3 + rank, s.z + fz * 6.6); sign.rotation.y = yaw; sign.userData.own = true; group.add(sign);
+    for (let k = 0; k < rank; k++) { const fl = new THREE.Mesh(new THREE.BoxGeometry(10, 3.4, 8), new THREE.MeshStandardMaterial({ color: new THREE.Color(d.color).lerp(new THREE.Color('#ffffff'), 0.55), roughness: 0.6 })); fl.position.set(s.x, s.model.topY + 1.7 + k * 3.4, s.z); fl.rotation.y = yaw; fl.castShadow = true; fl.userData.own = true; group.add(fl); }
+    const n = Math.min(10, 1 + Math.floor(b.level / 4)); for (let k = 0; k < n; k++) people.push({ s, yaw, ph: k * 1.9 + idx * 0.7, off: 7.6 + (k % 3) * 0.7, span: 3.5 + (k % 4) });
+  }
+  if (!people.length) { bizFx = { group, people: [] }; return; }
+  const body = new THREE.InstancedMesh(personParts.body, new THREE.MeshStandardMaterial({ roughness: 0.7 }), people.length), head = new THREE.InstancedMesh(personParts.head, new THREE.MeshStandardMaterial({ roughness: 0.7 }), people.length);
+  const shirts = ['#c9433b', '#3b6fb0', '#e0b43a', '#4f9b5e', '#e8e8e8', '#7b4fa3'], skins = ['#f1c9a5', '#d9a679', '#a97551', '#6b4a33'];
+  people.forEach((p, i) => { body.setColorAt(i, tmpC.set(shirts[i % 6])); head.setColorAt(i, tmpC.set(skins[i % 4])); }); body.instanceColor.needsUpdate = head.instanceColor.needsUpdate = true; body.frustumCulled = head.frustumCulled = false; group.add(body, head);
+  bizFx = { group, people, body, head };
+}
+function updateBizFx(t) {
+  if (!bizFx || !bizFx.people.length) return; const { people, body, head } = bizFx;
+  people.forEach((p, i) => { const a = Math.sin(t * 0.35 + p.ph) * p.span, c = Math.cos(p.yaw), sn = Math.sin(p.yaw), fx = sn, fz = c, rx = c, rz = -sn, x = p.s.x + fx * p.off + rx * a, z = p.s.z + fz * p.off + rz * a, y = Math.abs(Math.sin(t * 5 + p.ph)) * 0.04;
+    tmpQ.setFromAxisAngle(UP, p.yaw + (Math.cos(t * 0.35 + p.ph) > 0 ? Math.PI / 2 : -Math.PI / 2)); tmpM.compose(tmpP.set(x, y, z), tmpQ, tmpS.set(1, 1, 1)); body.setMatrixAt(i, tmpM); head.setMatrixAt(i, tmpM); });
+  body.instanceMatrix.needsUpdate = head.instanceMatrix.needsUpdate = true;
+}
+
 /* ---------- interiors (demo mode): click a house or shop to go inside ---------- */
 const demo = params.has('demo') || dev;
 const fadeEl = $('fade');
@@ -658,7 +687,7 @@ const interior = new InteriorSystem({
   openPreview: sys => previewStage(sys, sys.s),
   onExit: () => {
     fadeEl.classList.add('on');
-    setTimeout(() => { renderPass.scene = scene; renderPass.camera = camera; fly = null; controls.enabled = true; $('hud').style.display = ''; $('dev').style.visibility = ''; labelEl.style.opacity = 0; fadeEl.classList.remove('on'); }, 450);
+    setTimeout(() => { renderPass.scene = scene; renderPass.camera = camera; fly = null; controls.enabled = true; $('hud').style.display = ''; $('dev').style.visibility = ''; labelEl.style.opacity = 0; fadeEl.classList.remove('on'); refreshBizFx(); }, 450);
   },
 });
 let entering = false;
@@ -717,7 +746,7 @@ function frame(nowMs) {
     labelEl.style.opacity = on ? 1 : 0; labelEl.style.left = (proj.x * 0.5 + 0.5) * innerWidth + 'px'; labelEl.style.top = (-proj.y * 0.5 + 0.5) * innerHeight + 'px';
   } else { beam.visible = ring.visible = false; labelEl.style.opacity = 0; }
   aviMat.color.setRGB(1, 0.07, 0.04).multiplyScalar(0.3 + 4 * Math.max(0, Math.sin(now * 3.1)));
-  updateAgents(dt, now); updateAmbient(now); W.infra.update(now, dt); updateFireworks(dt, now);
+  updateAgents(dt, now); updateAmbient(now); updateBizFx(now); W.infra.update(now, dt); updateFireworks(dt, now);
   if ((frames & 7) === 0) updateChunks();
   composer.render();
   frames++; slowMs += dt * 1000;
