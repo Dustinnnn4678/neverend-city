@@ -761,13 +761,20 @@ function refreshClaimPlates(claims) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smallPlate(text, ok), depthTest: false, transparent: true })); sp.scale.set(8, 2, 1); sp.position.set(s.x, s.model.topY + 4.5, s.z); sp.renderOrder = 8; g.add(sp); }
   plates = g;
 }
+let starGeoCache = null;
+function starGeo() {
+  if (starGeoCache) return starGeoCache; const sh = new THREE.Shape(), R = 3, r = 1.25;
+  for (let k = 0; k < 10; k++) { const a = Math.PI / 2 + k * Math.PI / 5, d = k % 2 ? r : R, x = Math.cos(a) * d, y = Math.sin(a) * d; k ? sh.lineTo(x, y) : sh.moveTo(x, y); }
+  sh.closePath(); const g = new THREE.ExtrudeGeometry(sh, { depth: 0.7, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.3, bevelSegments: 3 }); g.translate(0, 0, -0.35); g.computeVertexNormals();
+  return (starGeoCache = g);
+}
 function refreshGolden() {
   if (goldenGroup) { world.remove(goldenGroup); goldenGroup.traverse(o => { if (o.userData.own && o.geometry) o.geometry.dispose(); }); goldenGroup = null; }
   if (!visitorOn || !W || !W.S.length) return;
   const g = new THREE.Group(); world.add(g);
   visitor.goldenToday(W.S.length).forEach(i => {
-    if (visitor.isFound(i)) return; const s = W.S[i], star = new THREE.Mesh(new THREE.OctahedronGeometry(1.6, 0), new THREE.MeshStandardMaterial({ color: 0xffc400, emissive: 0xffa000, emissiveIntensity: 2.4, metalness: 0.8, roughness: 0.25 }));
-    star.scale.y = 1.5; star.position.set(s.x, s.model.topY + 8, s.z); star.userData = { golden: i, own: true, star: true }; const hit = new THREE.Mesh(new THREE.SphereGeometry(5), new THREE.MeshBasicMaterial({ visible: false })); hit.position.copy(star.position); hit.userData = { golden: i, own: true }; g.add(star, hit);
+    if (visitor.isFound(i)) return; const s = W.S[i], star = new THREE.Mesh(starGeo(), new THREE.MeshStandardMaterial({ color: 0xffc400, emissive: 0xffa000, emissiveIntensity: 2.2, metalness: 0.7, roughness: 0.3 }));
+    star.position.set(s.x, s.model.topY + 8, s.z); star.userData = { golden: i, own: true, star: true }; const hit = new THREE.Mesh(new THREE.SphereGeometry(5), new THREE.MeshBasicMaterial({ visible: false })); hit.position.copy(star.position); hit.userData = { golden: i, own: true }; g.add(star, hit);
   });
   goldenGroup = g;
 }
