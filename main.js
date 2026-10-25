@@ -713,9 +713,25 @@ canvas.addEventListener('pointerup', e => {
   const meshes = []; world.traverse(o => { if (o.isInstancedMesh && o.userData.items && visibleChain(o)) meshes.push(o); });
   const hit = pickRay.intersectObjects(meshes, false)[0]; if (!hit) return;
   const s = hit.object.userData.items[hit.instanceId]; if (!s) return;
-  if (visitor.pickMode) { if (visitor.claimedSet.has(s.i)) { toast('That building is already claimed. Pick another.'); return; } visitor.pickMode = false; visitor.pending = s; visitor.open('building'); return; }
+  if (visitor.pickMode) { if (visitor.claimedSet.has(s.i)) { toast('That building is already claimed. Pick another.'); return; } visitor.pickMode = false; hoverMark.visible = false; visitor.pending = s; visitor.open('building'); return; }
   if (!demo) return;
   if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
+});
+/* while picking a building to claim, a glowing ring + beam follows the pointer (green = free, red = already claimed) */
+const hoverMark = (() => {
+  const g = new THREE.Group(), ringMat = new THREE.MeshBasicMaterial({ color: 0x44ffaa, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }), beamMat = new THREE.MeshBasicMaterial({ color: 0x44ffaa, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(6, 7.6, 48), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.3;
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(6.8, 6.8, 70, 32, 1, true), beamMat); beam.position.y = 35; g.add(ring, beam); g.visible = false; scene.add(g); g.userData = { ringMat, beamMat }; return g;
+})();
+let lastHover = 0;
+canvas.addEventListener('pointermove', e => {
+  if (!visitorOn || !visitor.pickMode || !W) { if (hoverMark.visible) hoverMark.visible = false; return; }
+  const nowMs = performance.now(); if (nowMs - lastHover < 50) return; lastHover = nowMs;
+  const r = canvas.getBoundingClientRect(); pickNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); pickRay.setFromCamera(pickNdc, camera);
+  const meshes = []; world.traverse(o => { if (o.isInstancedMesh && o.userData.items && visibleChain(o)) meshes.push(o); });
+  const hit = pickRay.intersectObjects(meshes, false)[0], s = hit && hit.object.userData.items[hit.instanceId];
+  if (!s) { hoverMark.visible = false; return; }
+  const col = visitor.claimedSet.has(s.i) ? 0xff5566 : 0x44ffaa; hoverMark.userData.ringMat.color.setHex(col); hoverMark.userData.beamMat.color.setHex(col); hoverMark.position.set(s.x, 0, s.z); hoverMark.visible = true;
 });
 if (demo) setTimeout(() => toast('Demo: click a house or shop to go inside'), 4000);
 if (demo) { const sb = $('stats'); sb.style.display = ''; sb.addEventListener('click', () => { if (interior.active || entering || !W) return; entering = true; fadeEl.classList.add('on');
