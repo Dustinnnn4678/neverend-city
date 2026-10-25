@@ -147,6 +147,7 @@ export function buildInfra(n, ctx) {
       else if (l < 36) { const u = (l - 22) / 14; arr.position.set(RW1 - 6 - 180 * (1 - (1 - u) ** 2), 2.5, 0); arr.rotation.set(0, Math.PI, 0); }
       dep.userData.strobe.visible = arr.userData.strobe.visible = Math.sin(t * 9) > 0.6;
     });
+    addAirportLife(group, updaters, ctx, ax);
   }
 
   if (n >= SITES.harbor.at) {
@@ -168,9 +169,94 @@ export function buildInfra(n, ctx) {
       const b = makeBoat(kind, hull, acc); group.add(b); boats.push({ b, rx: (wx1 - wx0) * rx, rz: (wz1 - wz0 - 50) * rz, spd, ph, cx: hx, cz: wz0 + 62 + (wz1 - wz0 - 62) / 2 });
     }
     updaters.push((t) => boats.forEach(o => { const a = t * o.spd / 90 + o.ph, x = o.cx + Math.cos(a) * o.rx, z = o.cz + Math.sin(a) * o.rz; o.b.position.set(x, 0.3, z); o.b.rotation.y = Math.atan2(-Math.cos(a) * o.rz, -Math.sin(a) * o.rx); o.b.rotation.z = Math.sin(t * 1.3 + o.ph) * 0.02; }));
+    addHarborLife(group, updaters, ctx, { hx, hz, wx0, wx1, wz0, wz1 });
   }
 
   const pg = paintBag.geo(); if (pg) group.add(mesh(pg, M.paint));
   const sg = signBag.geo(); if (sg) group.add(mesh(sg, M.sign, false));
   return { group, update: (t, dt) => updaters.forEach(u => u(t, dt)) };
+}
+
+/* ---------- ground life: vehicles, people and moving machinery ---------- */
+const flatG = (w, d) => new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2);
+function loopPath(pts) {
+  const lens = pts.map((p, i) => { const q = pts[(i + 1) % pts.length]; return Math.hypot(q[0] - p[0], q[1] - p[1]); }), tot = lens.reduce((a, b) => a + b, 0);
+  return { tot, at(d) { d = ((d % tot) + tot) % tot; let k = 0; while (d > lens[k]) { d -= lens[k]; k++; } const p = pts[k], q = pts[(k + 1) % pts.length], f = d / lens[k]; return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, Math.atan2(q[0] - p[0], q[1] - p[1])]; } };
+}
+function horiz(rad, len, r, x, y0, z, c, l) { l.push(colorize(new THREE.CylinderGeometry(r, r, len, 14).rotateX(Math.PI / 2).translate(x, y0 + r, z), c)); }
+const VEH = (() => {
+  const mk = f => { const b = new Bag(); f(b); return b.geo(); }, out = {};
+  out.tug = mk(b => { b.box(1.9, 1.1, 2.6, 0, 0.4, 0, '#e8a52a').box(1.7, 0.9, 1.3, 0, 1.4, -0.4, '#2b3440').box(0.3, 0.3, 0.6, 0, 0.3, -1.5, '#4a4e55'); });
+  out.cart = mk(b => { b.box(2.3, 0.35, 3.6, 0, 0.45, 0, '#8e949c').box(2.1, 1.2, 3.2, 0, 0.8, 0, '#c8ccd2').box(2.2, 0.15, 3.4, 0, 2.0, 0, '#d9433a'); });
+  out.fuel = mk(b => { b.box(2.4, 1.6, 2.4, 0, 0.5, 3, '#e8e8ec').box(2.0, 0.9, 1.3, 0, 1.6, 3.6, '#2b3440').box(2.4, 0.5, 6.6, 0, 0.3, -1, '#4a4e55'); horiz(0, 6.2, 1.15, 0, 0.9, -1.2, '#d9433a', b.l); });
+  out.bus = mk(b => { b.box(2.7, 2.7, 9.4, 0, 0.5, 0, '#f1f1ee').box(2.75, 1.0, 8.2, 0, 1.5, 0, '#1d2630').box(2.7, 0.4, 9.4, 0, 1.0, 0, '#2f6aa8'); });
+  out.catering = mk(b => { b.box(2.5, 1.5, 2.2, 0, 0.5, 3, '#e8e8ec').box(2.2, 0.9, 1.2, 0, 1.6, 3.5, '#2b3440').box(2.8, 3.2, 5.2, 0, 1.2, -0.6, '#ffffff').box(2.9, 0.4, 5.3, 0, 3.5, -0.6, '#2f6aa8'); });
+  out.truck = mk(b => { b.box(2.5, 2.2, 2.4, 0, 0.6, 5.6, '#2f6aa8').box(2.2, 0.8, 1.2, 0, 2.0, 6.1, '#1d2630').box(2.4, 0.4, 9, 0, 0.5, -0.4, '#4a4e55').box(2.5, 2.6, 8.4, 0, 0.9, -0.6, '#c0392b'); });
+  out.fork = mk(b => { b.box(1.4, 1.2, 2, 0, 0.3, 0, '#e8a52a').box(1.2, 1.2, 0.2, 0, 1.4, 0.8, '#2b3440').box(0.1, 1.8, 0.1, -0.4, 0.2, 1.4, '#4a4e55').box(0.1, 1.8, 0.1, 0.4, 0.2, 1.4, '#4a4e55').box(0.15, 0.1, 1.2, -0.4, 0.3, 2.0, '#4a4e55').box(0.15, 0.1, 1.2, 0.4, 0.3, 2.0, '#4a4e55'); });
+  return out;
+})();
+const vehMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.3 });
+/* agents: [{ kind, path, speed, off }] -> returns an update(t) function */
+function driveAgents(group, agents) {
+  const by = {}; agents.forEach(a => (by[a.kind] ||= []).push(a));
+  const meshes = Object.entries(by).map(([kind, list]) => { const m = inst(VEH[kind], vehMat, list.length); m.castShadow = true; group.add(m); return { m, list }; });
+  return t => { for (const { m, list } of meshes) { list.forEach((a, i) => { const [x, z, yaw] = a.path.at(t * a.speed + a.off); put(m, i, x, 0.02, z, yaw); }); m.instanceMatrix.needsUpdate = true; } };
+}
+const bodyGeo = new THREE.CapsuleGeometry(0.21, 0.55, 4, 8).translate(0, 1.0, 0), headG = new THREE.SphereGeometry(0.14, 10, 8).translate(0, 1.55, 0);
+function crowd(group, count, shirts) {
+  const mat = () => new THREE.MeshStandardMaterial({ roughness: 0.7 }), body = inst(bodyGeo, mat(), count), head = inst(headG, mat(), count), skins = ['#f1c9a5', '#d9a679', '#a97551', '#6b4a33'];
+  for (let i = 0; i < count; i++) { body.setColorAt(i, new THREE.Color(shirts[i % shirts.length])); head.setColorAt(i, new THREE.Color(skins[(i * 7) % 4])); }
+  body.instanceColor.needsUpdate = head.instanceColor.needsUpdate = true; body.castShadow = true; group.add(body, head);
+  return { set(i, x, y, z, yaw) { put(body, i, x, y, z, yaw); put(head, i, x, y, z, yaw); }, flush() { body.instanceMatrix.needsUpdate = head.instanceMatrix.needsUpdate = true; } };
+}
+function serviceRoad(group, w, d, x, z) { const m = new THREE.Mesh(flatG(w, d), new THREE.MeshStandardMaterial({ color: 0x3b3d42, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })); m.position.set(x, 0.1, z); m.receiveShadow = true; group.add(m); }
+
+function addAirportLife(group, updaters, ctx, ax) {
+  serviceRoad(group, 176, 9, ax, 47);
+  const road = loopPath([[ax - 85, 49], [ax + 85, 49], [ax + 85, 45], [ax - 85, 45]]), agents = [];
+  for (const [train, off] of [[0, 20], [1, 190]]) { agents.push({ kind: 'tug', path: road, speed: 6, off }); for (let k = 1; k <= 3; k++) agents.push({ kind: 'cart', path: road, speed: 6, off: off - k * 4.6 }); void train; }
+  agents.push({ kind: 'fuel', path: road, speed: 4.5, off: 120 }, { kind: 'catering', path: road, speed: 3.5, off: 260 }, { kind: 'bus', path: road, speed: 7, off: 60 }, { kind: 'bus', path: road, speed: 7, off: 230 });
+  const drive = driveAgents(group, agents);
+  /* ground crew around the parked planes, and passengers crossing in front of the terminal */
+  const crew = crowd(group, 18, ['#ff7a1a', '#ffd23a', '#ff7a1a', '#e8e8ec']), walkRoad = loopPath([[ax - 36, 69.2], [ax + 36, 69.2], [ax + 36, 70.4], [ax - 36, 70.4]]);
+  const spots = []; for (const dx of [-24, 0, 24]) spots.push([ax + dx - 7, 55], [ax + dx + 7, 55], [ax + dx - 12, 62], [ax + dx + 12, 62]);
+  /* rotating radar on the control tower */
+  const radar = inst(new Bag().box(5.2, 0.4, 0.9, 0, 0, 0, '#cfd3d8').box(0.4, 1.4, 0.4, 0, -1.4, 0, '#8f949b').box(1.2, 0.8, 0.5, 2.2, 0.3, 0, '#d9433a').geo(), vehMat, 1); radar.castShadow = true; group.add(radar);
+  updaters.push((t) => {
+    drive(t);
+    for (let i = 0; i < 18; i++) {
+      if (i < 12) { const s = spots[i]; crew.set(i, s[0] + Math.sin(t * 0.5 + i) * 0.6, Math.abs(Math.sin(t * 2 + i)) * 0.03, s[1] + Math.cos(t * 0.4 + i * 2) * 0.5, Math.sin(t * 0.3 + i) * 1.4); }
+      else { const [x, z, yaw] = walkRoad.at(t * 1.2 + (i - 12) * 22); crew.set(i, x, Math.abs(Math.sin(t * 6 + i)) * 0.05, z, yaw); }
+    }
+    crew.flush(); put(radar, 0, ax - 70, 40.6, 70, t * 2.4); radar.instanceMatrix.needsUpdate = true;
+  });
+}
+
+function addHarborLife(group, updaters, ctx, h) {
+  const { hx, wx0, wx1, wz1 } = h, x0 = wx0 - 4, x1 = wx1 + 4;
+  serviceRoad(group, x1 - x0, 9, hx, 119);
+  const road = loopPath([[x0 + 4, 121], [x1 - 4, 121], [x1 - 4, 117], [x0 + 4, 117]]), yard = loopPath([[x0 + 16, 115.6], [x0 + 70, 115.6], [x0 + 70, 114.4], [x0 + 16, 114.4]]), agents = [];
+  for (const [sp, off] of [[6, 0], [7.5, 120], [5, 250]]) agents.push({ kind: 'truck', path: road, speed: sp, off });
+  agents.push({ kind: 'fork', path: yard, speed: 3, off: 0 }, { kind: 'fork', path: yard, speed: 3.4, off: 60 });
+  const drive = driveAgents(group, agents);
+  /* dock workers walking the quay edges */
+  const workers = crowd(group, 14, ['#ff7a1a', '#ffd23a', '#ff7a1a', '#3b6fb0']), quayN = loopPath([[x0 + 8, 124.6], [x1 - 8, 124.6], [x1 - 8, 125.4], [x0 + 8, 125.4]]), quayS = loopPath([[x0 + 30, wz1 + 7.2], [x1 - 30, wz1 + 7.2], [x1 - 30, wz1 + 8.2], [x0 + 30, wz1 + 8.2]]);
+  /* crane trolleys carrying containers back and forth */
+  const cranes = [hx - 60, hx + 20], trolley = inst(new Bag().box(2.4, 1.2, 2.4, 0, 0, 0, '#2b3440').geo(), vehMat, 2), cable = inst(new THREE.BoxGeometry(0.12, 1, 0.12).translate(0, -0.5, 0), new THREE.MeshStandardMaterial({ color: 0x1d2023 }), 2), box = inst(new THREE.BoxGeometry(2.5, 2.6, 12).translate(0, -1.3, 0), new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.4 }), 2);
+  box.setColorAt(0, new THREE.Color('#2f6aa8')); box.setColorAt(1, new THREE.Color('#d9433a')); box.instanceColor.needsUpdate = true; group.add(trolley, cable, box);
+  /* quay lamps */
+  const lampPos = []; for (let x = x0 + 12; x < x1 - 8; x += 16) lampPos.push([x, 126.8]);
+  const poles = inst(new THREE.CylinderGeometry(0.12, 0.16, 8, 6).translate(0, 4, 0), new THREE.MeshStandardMaterial({ color: 0x23262b, metalness: 0.6, roughness: 0.5 }), lampPos.length), heads = inst(new THREE.SphereGeometry(0.5, 10, 8), ctx.lampMat, lampPos.length);
+  lampPos.forEach((p, i) => { put(poles, i, p[0], 0.2, p[1]); put(heads, i, p[0], 8.4, p[1]); }); group.add(poles, heads);
+  /* seagulls circling the harbor */
+  const gullGeo = new Bag(); const wl = new THREE.BoxGeometry(1.5, 0.06, 0.5).translate(-0.75, 0, 0).rotateZ(0.3), wr = new THREE.BoxGeometry(1.5, 0.06, 0.5).translate(0.75, 0, 0).rotateZ(-0.3); gullGeo.l.push(colorize(wl, '#f4f4f2'), colorize(wr, '#f4f4f2'), colorize(new THREE.BoxGeometry(0.3, 0.2, 0.9), '#ffffff'));
+  const gulls = inst(gullGeo.geo(), vehMat, 12), cz = (h.wz0 + wz1) / 2;
+  updaters.push((t) => {
+    drive(t);
+    for (let i = 0; i < 14; i++) { const [x, z, yaw] = (i < 9 ? quayN : quayS).at(t * 1.1 + i * 31); workers.set(i, x, Math.abs(Math.sin(t * 6 + i)) * 0.05, z, yaw); } workers.flush();
+    cranes.forEach((x, i) => { const u = (t * 0.045 + i * 0.4) % 1, z = wz1 + 4 - 12 + 11 * Math.cos(u * Math.PI * 2), y = 8 + 7 * (0.5 + 0.5 * Math.sin(u * Math.PI * 4)); put(trolley, i, x, 25.4, z); put(cable, i, x, 25, z, 0, 1, 25 - y, 1); put(box, i, x, y, z); });
+    trolley.instanceMatrix.needsUpdate = cable.instanceMatrix.needsUpdate = box.instanceMatrix.needsUpdate = true;
+    for (let i = 0; i < 12; i++) { const a = t * (0.25 + (i % 3) * 0.05) + i * 0.9, r = 22 + (i % 4) * 11, x = hx + Math.cos(a) * r * 1.5, z = cz + Math.sin(a) * r; put(gulls, i, x, 24 + (i % 5) * 4 + Math.sin(t * 0.7 + i) * 2, z, Math.atan2(-Math.sin(a) * 1.5, Math.cos(a)) + 0, 0.6 + 0.45 * Math.abs(Math.sin(t * 7 + i)), 1, 1, Math.sin(t * 3 + i) * 0.1); }
+    gulls.instanceMatrix.needsUpdate = true;
+  });
 }
