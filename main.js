@@ -713,7 +713,7 @@ canvas.addEventListener('pointerup', e => {
   const meshes = []; world.traverse(o => { if (o.isInstancedMesh && o.userData.items && visibleChain(o)) meshes.push(o); });
   const hit = pickRay.intersectObjects(meshes, false)[0]; if (!hit) return;
   const s = hit.object.userData.items[hit.instanceId]; if (!s) return;
-  if (visitor.pickMode) { if (visitor.claimedSet.has(s.i)) { toast('That building is already claimed. Pick another.'); return; } visitor.pickMode = false; visitor.pending = s; visitor.open('claim'); return; }
+  if (visitor.pickMode) { if (visitor.claimedSet.has(s.i)) { toast('That building is already claimed. Pick another.'); return; } visitor.pickMode = false; visitor.pending = s; visitor.open('building'); return; }
   if (canEnter(s)) openBuilding(s); else toast('Only homes and shops open in this demo.');
 });
 if (demo) setTimeout(() => toast('Demo: click a house or shop to go inside'), 4000);
@@ -781,9 +781,18 @@ const visitor = new Visitor({
   getCtx: () => ({ W, count, next: nextMilestone(count), fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => overlayStage(() => shareStage(interior, W.S[i], visitor.v.claim, location.host + location.pathname.replace(/\/$/, ''))) }),
   showCrate: res => overlayStage(() => crateStage(interior, res, () => { const r = visitor.openOne(); if (r) crateStage(interior, r, () => {}); })),
   locateGolden: locateGoldenStar,
+  onClaimed: i => { const s = W && W.S[i]; if (!s) return; flyTo(s.x, s.model.topY + 8, s.z, 70, 6); const cols = ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b']; for (let k = 0; k < 6; k++) setTimeout(() => { if (typeof fw !== 'undefined') fw.queue.push({ t: performance.now() / 1000, x: s.x + (Math.random() - .5) * 30, y: s.model.topY + 20 + Math.random() * 14, z: s.z + (Math.random() - .5) * 30, c: cols[k % 4] }); }, 900 + k * 450); },
 });
 $('devev').addEventListener('click', () => startLiveEvent());
-if (visitorOn) { const hb = $('hubbtn'); hb.style.display = ''; hb.addEventListener('click', () => visitor.open()); visitor.refreshBadge(); }
+if (visitorOn) {
+  const hb = $('hubbtn'); hb.style.display = ''; hb.addEventListener('click', () => visitor.open());
+  $('dfind').addEventListener('click', () => { const c = visitor.v.claim; if (c && W && W.S[c.building]) { const s = W.S[c.building]; flyTo(s.x, 10, s.z, 60, 5); } else visitor.open('building'); });
+  $('dcrate').addEventListener('click', () => visitor.open('crates'));
+  visitor.refreshBadge(true);
+  let seen = false; try { seen = !!localStorage.getItem('nc.welcomed'); } catch (e) { /* ignore */ }
+  if (!seen) setTimeout(() => { import('./gameui.js').then(G => G.welcomeCarousel(() => { try { localStorage.setItem('nc.welcomed', '1'); } catch (e) { /* ignore */ } if (visitor.remote && !visitor.remote.signedIn) visitor.open(); })); }, 2500);
+}
+$('dview').addEventListener('click', () => { const m = $('viewmenu'); m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; });
 
 /* ---------- live milestone event: 10 minutes of fireworks, a parade of cars, sweeping spotlights, double points ---------- */
 let liveEv = null;
