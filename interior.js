@@ -242,7 +242,7 @@ export class InteriorSystem {
       const f = FURNITURE[this.ghost.id]; if (!this.ghost.moving && !this.store.spend(f.price)) { this.notify('Not enough City Coins.'); return; }
       const moved = this.ghost.moving && this.ghost.fromUid, it = { ...this.ghost.item, uid: moved ? this.ghost.fromUid : this.store.nextUid() }; this.store.furnitureOf(this.s.i).push(it); this.store.save();
       if (moved) this._act('move', { ref: it }); else this._act('place', { ref: it });
-      this.ghost.orig = null; const id = this.ghost.id; this._cancelGhost(); const o = this._addObject(it); this._select(o); this._refreshCoins(); this._vaultRefresh(); void id; return; }
+      this.ghost.orig = null; const id = this.ghost.id; this._cancelGhost(); const o = this._addObject(it); this._pop(o); this._fx('place'); this._select(o); this._refreshCoins(); this._vaultRefresh(); void id; return; }
     const hits = this.ray.intersectObjects(this.placed, true); if (hits.length) { let o = hits[0].object; while (o && !o.userData.item) o = o.parent; this._select(o || null); } else this._select(null);
   }
   _select(o) {
@@ -321,7 +321,7 @@ export class InteriorSystem {
       for (const [type, d] of Object.entries(BUSINESSES)) { const cost = type === 'lemonade' ? 0 : d.base * 5, locked = lvOwner < d.unlockOwner; h += `<button class="item" data-open="${type}" ${locked || others >= 1 ? 'disabled' : ''}><span>${d.name}<br><small class="tag">${locked ? 'Owner level ' + d.unlockOwner : fmt(d.base) + ' coins/hour at level 1'}</small></span><b>${cost ? fmt(cost) : 'Free'}</b></button>`; }
       h += `<div class="tag">Extras</div><button id="iprev">Cosmetics and 3D-print preview</button>`;
       p.innerHTML = h; p.querySelector('#iprev').addEventListener('click', () => this.ctx.openPreview(this));
-      p.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => { const type = el.dataset.open, cost = type === 'lemonade' ? 0 : BUSINESSES[type].base * 5; if (!this.store.spend(cost)) { this.notify('Not enough City Coins.'); return; } st.business[this.s.i] = { type, level: 1, workers: 0, manager: false, lastCollect: Date.now(), fixedAt: 0 }; this.store.save(); this._act('open', { type }); this.s.bizType = type; this._rebuildShop(); }));
+      p.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => { const type = el.dataset.open, cost = type === 'lemonade' ? 0 : BUSINESSES[type].base * 5; if (!this.store.spend(cost)) { this.notify('Not enough City Coins.'); return; } st.business[this.s.i] = { type, level: 1, workers: 0, manager: false, lastCollect: Date.now(), fixedAt: 0 }; this.store.save(); this._act('open', { type }); this.s.bizType = type; this._rebuildShop(); this._fx('open', BUSINESSES[type].name); }));
       return;
     }
     const d = BUSINESSES[b.type], per = baseIncomePerHour(b.type, b.level), pend = this._pend(b, now), stage = stageOf(b.level);
@@ -339,14 +339,17 @@ export class InteriorSystem {
     p.innerHTML = h;
     const on = (id, fn) => { const el = p.querySelector('#' + id); if (el) el.addEventListener('click', fn); };
     on('iprev', () => this.ctx.openPreview(this));
-    on('icollect', () => { const g = this._pend(b); b.lastCollect = Date.now(); this.store.earn(g); this._popCoins('+' + fmt(g)); this._act('collect'); this._renderPanel(); });
+    on('icollect', () => { const g = this._pend(b); b.lastCollect = Date.now(); this.store.earn(g); this._popCoins('+' + fmt(g)); this._act('collect'); this._fx('collect'); this._renderPanel(); });
     on('ifix', () => { b.fixedAt = Date.now(); this.store.save(); this._renderPanel(); });
-    on('iup', () => { const c = upgradeCost(b.type, b.level); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); this._settle(b); b.level++; this.store.save(); this._act('upgrade'); this._rebuildShop(); });
-    on('iwork', () => { const c = workerCost(b.type, b.workers); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.workers++; this.store.save(); this._act('worker'); this._rebuildShop(); });
-    on('imgr', () => { const c = managerCost(b.type); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.manager = true; this._settle(b); this.store.save(); this._act('manager'); this._rebuildShop(); });
+    on('iup', () => { const c = upgradeCost(b.type, b.level); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); this._settle(b); b.level++; this.store.save(); this._act('upgrade'); this._rebuildShop(); this._fx('upgrade', `Level ${b.level}`); });
+    on('iwork', () => { const c = workerCost(b.type, b.workers); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.workers++; this.store.save(); this._act('worker'); this._rebuildShop(); this._fx('worker'); });
+    on('imgr', () => { const c = managerCost(b.type); if (!this.store.spend(c)) return this.notify('Not enough City Coins.'); b.manager = true; this._settle(b); this.store.save(); this._act('manager'); this._rebuildShop(); this._fx('manager'); });
     on('ilike', () => { st.likes[this.s.i] = (st.likes[this.s.i] || 0) + 1; this.store.save(); this._renderPanel(); });
   }
   _settle(b) { const g = this._pend(b); b.lastCollect = Date.now(); this.store.earn(g); }
+  _fx(kind, text) { if (this.ctx.celebrate) this.ctx.celebrate(kind, text); }                       // banners, confetti and sounds live in main.js / gameui.js
+  _pop(o) { if (!o || document.body.classList.contains('rm')) return; o.userData.pop = 0; o.scale.setScalar(0.01); (this._popping ||= new Set()).add(o); }   // new furniture drops in with a bounce
+  _tickPops(dt) { if (!this._popping || !this._popping.size) return; for (const o of this._popping) { o.userData.pop += dt / 0.45; const k = Math.min(1, o.userData.pop), s = k < 1 ? 1 + Math.sin(k * Math.PI * 2.2) * 0.18 * (1 - k) - Math.pow(1 - k, 3) : 1; o.scale.setScalar(Math.max(0.01, s)); if (k >= 1) { o.scale.setScalar(1); this._popping.delete(o); } } }
   _pend(b, now = Date.now()) { const st = this.store.state; return pendingEarnings(b, st.player, now, st.seed, !st.noEvents); }   // on the live site the server pays plain income (no random events yet)
   _act(name, args) { if (this.store.act) this.store.act(name, { building: this.s.i, ...args }); }   // live site: tell the server what you did; it decides the numbers
   _rebuildShop() { const keep = this.camera.position.clone(), tgt = this.controls.target.clone(); this.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); }); this.scene = new THREE.Scene(); this.scene.environment = this.envMap; this.scene.environmentIntensity = 0.5; this.scene.background = new THREE.Color('#14171f'); this.customers = []; this.pops = []; this.walkers = []; this.renderPass.scene = this.scene; this._buildShop(); this.camera.position.copy(keep); this.controls.target.copy(tgt); this._renderPanel(); }
@@ -357,7 +360,7 @@ export class InteriorSystem {
 
   /* ----- per frame ----- */
   update(dt) {
-    if (!this.active) return; this.t += dt; const t = this.t, night = this.getNight(), st = this.store.state;
+    if (!this.active) return; this.t += dt; const t = this.t, night = this.getNight(), st = this.store.state; this._tickPops(dt);
     this.controls.update();
     if (this.kind === 'stage') { this.spec.update && this.spec.update(dt, t); return; }
     const sky = new THREE.Color('#9fd0ff').lerp(new THREE.Color('#0b1226'), night); (this.glass || []).forEach(m => m.color.copy(sky));

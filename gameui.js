@@ -38,9 +38,67 @@ export function injectStyles() {
 .gbig{font-size:64px;line-height:1;color:#ffe066;text-shadow:0 5px 0 #8a5a00,0 0 30px rgba(255,210,60,.7);margin:6px 0}
 .gring2{position:absolute;left:50%;top:50%;width:80px;height:80px;margin:-40px;border-radius:50%;border:4px solid rgba(255,230,120,.8);pointer-events:none;animation:gring 1.4s ease-out infinite}.gring2:nth-child(2){animation-delay:.45s}.gring2:nth-child(3){animation-delay:.9s}
 @keyframes gring{0%{transform:scale(.3);opacity:1}100%{transform:scale(5);opacity:0}}
+.gripple{position:fixed;z-index:90;width:14px;height:14px;margin:-7px;border-radius:50%;border:3px solid rgba(255,255,255,.9);pointer-events:none;animation:grip .5s ease-out forwards}
+@keyframes grip{0%{transform:scale(.4);opacity:.95}100%{transform:scale(4.2);opacity:0}}
+#dock{animation:gdock .7s cubic-bezier(.2,1.4,.4,1) both}@keyframes gdock{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+#gamebar{animation:gdown .6s cubic-bezier(.2,1.4,.4,1) both .15s}@keyframes gdown{from{transform:translateY(-24px);opacity:0}to{transform:none;opacity:1}}
+#vhub{backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}#vhub.closing{animation:gfadeout .2s forwards}#vhub.closing .card{animation:gshrink .2s forwards}
+@keyframes gfadeout{to{opacity:0}}@keyframes gshrink{to{transform:translate(-50%,-50%) scale(.9);opacity:0}}
+#vhub .body.noanim>*{animation:none!important}#vhub .body>*{animation:gitem .38s cubic-bezier(.2,1.2,.4,1) both;animation-delay:calc(var(--i,0) * 45ms)}
+@keyframes gitem{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+#vhub .q,#vhub .item,#vhub .rank{transition:transform .15s,box-shadow .15s,border-color .15s}#vhub .q:hover,#vhub .item:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(0,0,0,.35)}
+#vhub .tabs button{transition:transform .12s,background .2s}#vhub .tabs button:active{transform:scale(.94)}
+.gbanner{position:fixed;left:50%;top:21%;z-index:85;display:flex;gap:14px;align-items:center;padding:14px 26px 14px 18px;border-radius:24px;background:linear-gradient(#2b3a8a,#161f55);border:4px solid #fff;box-shadow:0 8px 0 #060a24,0 0 50px rgba(120,160,255,.65);color:#fff;font-family:var(--game-font);overflow:hidden;pointer-events:none;animation:gbanin .65s cubic-bezier(.2,1.7,.35,1) both}
+.gbanner.out{animation:gbanout .4s ease-in forwards}.gbanner::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);transform:translateX(-120%);animation:gshine 1.1s .5s ease-out}
+.gbe{font-size:46px;animation:gbob 1.6s ease-in-out infinite}.gbt{font-size:28px;letter-spacing:.04em;text-shadow:0 3px 0 rgba(0,0,0,.4)}.gbs{font:600 13px system-ui,sans-serif;opacity:.8;letter-spacing:.06em}
+@keyframes gbanin{from{transform:translate(-50%,-90px) scale(.5);opacity:0}to{transform:translate(-50%,0) scale(1);opacity:1}}@keyframes gbanout{to{transform:translate(-50%,-40px) scale(.85);opacity:0}}@keyframes gshine{to{transform:translateX(120%)}}
 .gstreak{display:flex;gap:6px;justify-content:center;margin:10px 0}.gstreak i{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:15px;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.3)}.gstreak i.on{background:linear-gradient(#ffb020,#ff6a00);border-color:#fff;animation:gbump .5s}
 `;
   document.head.appendChild(s);
+  // every button gets a soft tap ring and a tick sound
+  addEventListener('pointerdown', e => {
+    const b = e.target.closest && e.target.closest('button, .gchip, a.gbtn, .q, .item'); if (!b || b.disabled) return;
+    if (!document.body.classList.contains('rm')) { const r = document.createElement('div'); r.className = 'gripple'; r.style.left = e.clientX + 'px'; r.style.top = e.clientY + 'px'; document.body.appendChild(r); setTimeout(() => r.remove(), 520); }
+    sfx('tap');
+  }, true);
+}
+
+/* ---------- sound (tiny synthesized effects; no files to load) ---------- */
+let ac = null, muted = false; try { muted = localStorage.getItem('nc.mute') === '1'; } catch (e) { /* ignore */ }
+export const isMuted = () => muted;
+export function setMuted(m) { muted = m; try { localStorage.setItem('nc.mute', m ? '1' : '0'); } catch (e) { /* ignore */ } }
+function audio() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } } if (ac.state === 'suspended') ac.resume(); return ac; }
+function tone(freq, at, dur, type = 'sine', vol = 0.12, to) {
+  const a = audio(); if (!a || muted) return; const t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t); if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.05);
+}
+export function sfx(name) {
+  if (muted) return;
+  if (name === 'tap') tone(720, 0, 0.05, 'triangle', 0.05);
+  else if (name === 'open') tone(280, 0, 0.2, 'sine', 0.09, 640);
+  else if (name === 'coin') { tone(988, 0, 0.09, 'square', 0.05); tone(1319, 0.08, 0.16, 'square', 0.05); }
+  else if (name === 'claim') [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.09, 0.28, 'triangle', 0.1));
+  else if (name === 'level') [392, 523, 659, 784, 1047, 1568].forEach((f, i) => tone(f, i * 0.08, 0.3, 'sine', 0.11));
+  else if (name === 'place') { tone(170, 0, 0.14, 'sine', 0.2, 70); tone(900, 0.02, 0.05, 'triangle', 0.04); }
+  else if (name === 'error') tone(180, 0, 0.18, 'sawtooth', 0.06, 120);
+}
+
+/* ---------- big banner ("BUILDING CLAIMED!") ---------- */
+export function banner(title, sub, emoji = '🎉') {
+  const b = document.createElement('div'); b.className = 'gbanner'; b.innerHTML = `<div class="gbe">${emoji}</div><div><div class="gbt">${esc(title)}</div><div class="gbs">${esc(sub || '')}</div></div>`; document.body.appendChild(b);
+  setTimeout(() => { b.classList.add('out'); setTimeout(() => b.remove(), 420); }, 3000);
+}
+
+/* ---------- panel helpers: staggered entrance, bars that fill, numbers that count up ---------- */
+export function animateIn(root) {
+  [...root.children].slice(0, 16).forEach((c, i) => c.style.setProperty('--i', i));
+  root.querySelectorAll('.xp i').forEach(b => { const w = b.style.width; b.style.width = '0%'; void b.offsetWidth; requestAnimationFrame(() => { b.style.width = w; }); });
+}
+export function countUp(el, to, ms = 700) {
+  const from = Number(el.dataset.v ?? to); el.dataset.v = to; if (from === to || document.body.classList.contains('rm')) { el.textContent = fmt(to); return; }
+  const t0 = performance.now(); const step = t => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step);
 }
 
 /* ---------- confetti ---------- */
@@ -74,12 +132,12 @@ function overlay(html, onClose) {
 }
 export function levelUp(level, unlocks) {
   const { o, close } = overlay(`<div class="gcard"><div class="gring2"></div><div class="gring2"></div><div class="gring2"></div><span class="gpill">LEVEL UP</span><div class="gbig">Level ${level}!</div><p>You unlocked:</p>${(unlocks || []).map(u => `<p style="color:#fff;font-size:17px;margin:4px 0">★ ${esc(u)}</p>`).join('')}<button class="gbtn green big" id="gok" style="margin-top:12px">Awesome!</button></div>`);
-  confetti(220); o.querySelector('#gok').addEventListener('click', close); setTimeout(close, 6000);
+  confetti(220); sfx('level'); o.querySelector('#gok').addEventListener('click', close); setTimeout(close, 6000);
 }
 export function welcomeBack({ name, streak, gained, crate }, onClose) {
   const days = Array.from({ length: 7 }, (_, i) => `<i class="${i < ((streak - 1) % 7) + 1 ? 'on' : ''}">${i === 6 ? '🎁' : i + 1}</i>`).join('');
   const { o, close } = overlay(`<div class="gcard"><span class="gpill">${streak > 1 ? 'DAILY STREAK' : 'WELCOME'}</span><h1>${streak > 1 ? `Day ${streak}! 🔥` : `Welcome, ${esc(name || 'builder')}!`}</h1><div class="gstreak">${days}</div><div class="gbig" id="gcount">+0 ★</div><p>${streak > 1 ? 'Come back tomorrow to keep your streak!' : 'You helped build Neverend City. Claim a building and make it yours!'}${crate ? '<br><b style="color:#ffe066">A mystery crate for your 7-day streak!</b>' : ''}</p><button class="gbtn blue big" id="gok">Let's go!</button></div>`, onClose);
-  confetti(180); const el = o.querySelector('#gcount'); let v = 0; const iv = setInterval(() => { v = Math.min(gained, v + Math.max(1, Math.ceil(gained / 24))); el.textContent = '+' + v + ' ★'; if (v >= gained) clearInterval(iv); }, 35);
+  confetti(180); sfx('claim'); const el = o.querySelector('#gcount'); let v = 0; const iv = setInterval(() => { v = Math.min(gained, v + Math.max(1, Math.ceil(gained / 24))); el.textContent = '+' + v + ' ★'; if (v >= gained) clearInterval(iv); }, 35);
   o.querySelector('#gok').addEventListener('click', close); setTimeout(close, 9000);
 }
 const SLIDES = [
@@ -101,6 +159,7 @@ export function renderBar(el, visitor, onOpen) {
   if (visitor.remote && !visitor.remote.signedIn) { el.innerHTML = '<button class="gbtn blue big pulse" id="gjoin">Claim your building</button>'; el.querySelector('#gjoin').addEventListener('click', () => onOpen('quests')); return; }
   const v = visitor.v, lv = levelOf(v.points), nl = nextLevel(v.points), cur = LEVELS.find(l => l.level === lv), pct = nl ? (v.points - cur.at) / (nl.at - cur.at) : 1, C = 2 * Math.PI * 16;
   el.innerHTML = `<div class="gchip" id="gchip-level"><div class="gring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="5"/><circle cx="20" cy="20" r="16" fill="none" stroke="#ffd23a" stroke-width="5" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/></svg><b>${lv}</b></div><small>LEVEL</small></div>
-<div class="gchip" id="gchip-stars"><span style="color:#ffd23a;font-size:20px">★</span> ${fmt(v.points)}</div><div class="gchip" id="gchip-streak"><span style="font-size:18px">🔥</span> ${v.streak}</div>${v.crates ? `<div class="gchip" id="gchip-crates"><span style="font-size:18px">🎁</span> ${v.crates}</div>` : ''}`;
+<div class="gchip" id="gchip-stars"><span style="color:#ffd23a;font-size:20px">★</span> <span id="gstarn" data-v="${el.dataset.stars ?? v.points}">${fmt(el.dataset.stars ?? v.points)}</span></div><div class="gchip" id="gchip-streak"><span style="font-size:18px">🔥</span> ${v.streak}</div>${v.crates ? `<div class="gchip" id="gchip-crates"><span style="font-size:18px">🎁</span> ${v.crates}</div>` : ''}`;
   el.querySelectorAll('.gchip').forEach(c => c.addEventListener('click', () => onOpen(c.id === 'gchip-crates' ? 'crates' : 'quests')));
+  countUp(el.querySelector('#gstarn'), v.points); el.dataset.stars = v.points;      // the stars number rolls up to the new total
 }

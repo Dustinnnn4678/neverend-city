@@ -79,8 +79,8 @@ export class Visitor {
   /* ----- style shop ----- */
   async buy(id) {
     const c = COSMETICS.find(x => x.id === id); if (!c || this.v.owned.includes(id)) return;
-    if (this.remote) { if (await this.run(async () => { await this.remote.rpc('rpc_buy_cosmetic', { p_id: id }); return true; })) { await this.sync(); this.render(); } return; }
-    if (!canBuy(c, this.level, this.v.points)) return this.notify('Not enough stars or level too low.'); this.v.points -= c.cost; this.v.owned.push(id); this.save(); this.refreshBadge(); this.render();
+    if (this.remote) { if (await this.run(async () => { await this.remote.rpc('rpc_buy_cosmetic', { p_id: id }); return true; })) { G.sfx('coin'); await this.sync(); this.render(); } return; }
+    if (!canBuy(c, this.level, this.v.points)) return this.notify('Not enough stars or level too low.'); this.v.points -= c.cost; this.v.owned.push(id); this.save(); this.refreshBadge(); G.sfx('coin'); this.render();
   }
   async equip(id) {
     const c = COSMETICS.find(x => x.id === id); if (!c || !this.v.owned.includes(id)) return; const off = this.v.equipped[c.slot] === id;
@@ -133,8 +133,8 @@ export class Visitor {
     if (!quiet && this._lastPts !== null) { if (pts > this._lastPts) G.floatGain(`+${fmt(pts - this._lastPts)} ★`); if (lv > this._lastLevel) G.levelUp(lv, LEVELS.find(l => l.level === lv).unlocks); }
     this._lastPts = pts; this._lastLevel = lv;
   }
-  open(tab) { if (tab) this.tab = tab; this.root.style.display = 'block'; this.render(); if (this.remote && this.remote.signedIn) this.run(async () => { await this.sync(true); await this.loadPublic(); if (this.root.style.display === 'block') this.render(); }); }
-  close() { this.root.style.display = 'none'; }
+  open(tab) { if (tab) this.tab = tab; clearTimeout(this._ct); this.root.classList.remove('closing'); if (this.root.style.display !== 'block') { G.sfx('open'); this._opens = (this._opens || 0) + 1; } this.root.style.display = 'block'; this.render(); if (this.remote && this.remote.signedIn) this.run(async () => { await this.sync(true); await this.loadPublic(); if (this.root.style.display === 'block') this.render(); }); }
+  close() { if (this.root.style.display !== 'block') return; this.root.classList.add('closing'); clearTimeout(this._ct); this._ct = setTimeout(() => { this.root.style.display = 'none'; this.root.classList.remove('closing'); }, 200); }
 
   /* ----- live-site extras: daily and weekly quests, calendar, achievements, news, friends, community projects ----- */
   async _dailyQuests(box) {
@@ -142,18 +142,18 @@ export class Visitor {
     const row = x => `<div class="q ${x.claimed ? 'done' : ''}"><div class="qi">${x.claimed ? '✅' : '🎯'}</div><div class="qb"><div class="qt">${esc(x.title)}</div><div class="dim">${x.progress}/${x.target} · +${x.coins} 🪙 +${x.points} ★</div></div>${x.progress >= x.target && !x.claimed ? `<button class="gbtn gold pulse" data-claimq="${x.id}">Claim</button>` : ''}</div>`;
     box.innerHTML = `<div class="dim" style="margin:2px 0 6px">TODAY'S QUESTS ${q.freezeAvailable ? '· ❄️ streak freeze ready' : ''}</div>${q.daily.map(row).join('')}<div class="dim" style="margin:10px 0 6px">THIS WEEK (finish all 5 for a weekly chest 🎁)</div>${q.weekly.map(row).join('')}<div style="height:6px"></div>`;
     box.querySelectorAll('[data-claimq]').forEach(b => b.addEventListener('click', async () => {
-      const r = await this.run(() => this.remote.rpc('rpc_claim_quest', { p_id: b.dataset.claimq })); if (!r) return; G.confetti(80); this.notify(`+${r.coins} coins, +${r.points} stars${r.chest ? ' and a weekly chest!' : ''}`); await this.run(() => this.sync()); this.render();
+      const r = await this.run(() => this.remote.rpc('rpc_claim_quest', { p_id: b.dataset.claimq })); if (!r) return; G.confetti(80); G.sfx('coin'); this.notify(`+${r.coins} coins, +${r.points} stars${r.chest ? ' and a weekly chest!' : ''}`); await this.run(() => this.sync()); this.render();
     }));
   }
   async _rewards(el) {
     el.innerHTML = '<div class="dim">Loading…</div>';
     const [cal, ach] = await Promise.all([this.run(() => this.remote.rpc('rpc_calendar')), this.run(() => this.remote.rpc('rpc_achievements'))]); if (!cal || this.tab !== 'rewards') return;
-    if (ach && ach.new) { G.confetti(100); this.notify(`${ach.new} new achievement${ach.new > 1 ? 's' : ''}!`); await this.run(() => this.sync()); }
+    if (ach && ach.new) { G.confetti(100); G.sfx('level'); G.banner(ach.new > 1 ? ach.new + ' ACHIEVEMENTS!' : 'ACHIEVEMENT!', 'Check your trophies below', '🏆'); this.notify(`${ach.new} new achievement${ach.new > 1 ? 's' : ''}!`); await this.run(() => this.sync()); }
     const next = cal.claimed >= 28 ? 1 : cal.claimed + 1, cells = Array.from({ length: 28 }, (_, i) => { const d = i + 1, done = d <= cal.claimed, big = d % 7 === 0; return `<div class="q ${done ? 'done' : ''}" style="padding:6px;flex-direction:column;gap:2px;justify-content:center;text-align:center;${d === next && cal.canClaim ? 'border-color:#ffd23a;box-shadow:0 0 12px #ffd23a' : ''}"><b style="font-family:var(--game-font)">${d}</b><span>${done ? '✅' : big ? '🎁' : '🪙'}</span></div>`; }).join('');
     const earned = new Set(ach ? ach.earned : []), defs = ach ? ach.defs : [];
     el.innerHTML = `<div class="sc"><div style="font:400 20px var(--game-font)">📅 28-day login calendar</div><div class="dim">Claim once a day. Days 7, 14, 21 and 28 give a rare cosmetic. Missing a day never resets it.</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cells}</div><button class="gbtn gold big" id="calgo" ${cal.canClaim ? '' : 'disabled'}>${cal.canClaim ? `Claim day ${next}` : 'Come back tomorrow'}</button></div>
 <div class="sc"><div style="font:400 20px var(--game-font)">🏆 Achievements ${earned.size}/${ach ? ach.total : 0}</div><div class="dim">Each new one gives +10 ★. Your trophies:</div><div style="display:flex;flex-wrap:wrap;gap:6px">${defs.filter(d => earned.has(d.id)).map(d => `<span class="gpill" style="font-size:11px">${esc(d.title)}</span>`).join('') || '<span class="dim">None yet. Keep playing!</span>'}</div></div>`;
-    const go = el.querySelector('#calgo'); if (go) go.addEventListener('click', async () => { const r = await this.run(() => this.remote.rpc('rpc_calendar_claim')); if (!r) return; G.confetti(140); this.notify(`Day ${r.day}: +${r.coins} coins, +${r.points} stars${r.cosmetic ? ' and a rare cosmetic!' : ''}`); await this.run(() => this.sync()); this._rewards(el); });
+    const go = el.querySelector('#calgo'); if (go) go.addEventListener('click', async () => { const r = await this.run(() => this.remote.rpc('rpc_calendar_claim')); if (!r) return; G.confetti(140); G.sfx('claim'); G.banner('DAY ' + r.day + ' CLAIMED', `+${r.coins} coins · +${r.points} ★` + (r.cosmetic ? ' · rare cosmetic!' : ''), '📅'); this.notify(`Day ${r.day}: +${r.coins} coins, +${r.points} stars${r.cosmetic ? ' and a rare cosmetic!' : ''}`); await this.run(() => this.sync()); this._rewards(el); });
   }
   async _city(el) {
     el.innerHTML = '<div class="dim">Loading…</div>';
@@ -193,7 +193,8 @@ ${mode === 'create' ? '<label style="display:flex;gap:8px;align-items:center"><i
     const fg = el.querySelector('#sforgot'); if (fg) fg.addEventListener('click', async e => { e.preventDefault(); const em = el.querySelector('#semail').value.trim(); if (!/^\S+@\S+\.\S+$/.test(em)) { msg.textContent = 'Type your email above first.'; return; } try { await this.remote.resetPassword(em); msg.style.color = '#9bffb4'; msg.textContent = 'If that email has an account, a reset link is on its way.'; } catch (err) { msg.textContent = err.message; } });
   }
 
-  render() {
+  render() { const key = this.tab + '|' + (this._opens || 0), fresh = this._animKey !== key; this._animKey = key; this.body.classList.toggle('noanim', !fresh); this._render(); if (fresh) G.animateIn(this.body); }   // animate on open and tab change, not on every refresh
+  _render() {
     if (this.remote && !this.remote.signedIn) { this.renderSignIn(); return; }
     const TABS = [['quests', 'Quests'], ['building', 'My building'], ['rewards', 'Rewards'], ['city', 'City'], ['style', 'Style'], ['crates', 'Crates'], ['leaders', 'Leaders'], ['support', 'Support'], ['more', 'More']];
     this.tabsEl.innerHTML = TABS.map(([id, n]) => `<button data-t="${id}" class="${this.tab === id ? 'on' : ''}">${n}</button>`).join(''); this.tabsEl.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { this.tab = b.dataset.t; this.render(); }));
@@ -234,8 +235,8 @@ ${v.crates ? quest('🎁', `${v.crates} mystery crate${v.crates > 1 ? 's' : ''} 
 ${c.status === 'verified' ? '<div class="q done"><div class="qi">✅</div><div class="qb"><div class="qt">You are verified!</div><div class="dim">Your name plate shows a green check.</div></div></div>' : `<div class="sc"><div><span class="sn">3</span><b style="font:400 17px var(--game-font)">Prove it is you</b></div><div class="dim">Comment this code on my latest ${c.platform === 'youtube' ? 'video' : 'post'}:</div><div class="code">${esc(c.code)}</div><button class="gbtn dark" id="ccopy">Copy code</button><div class="dim">${this.remote ? 'YouTube comments are checked automatically. Instagram ones are checked by hand. ' : ''}Verified = <b>+100 ★</b>.</div>${this.remote ? '<button class="gbtn green" id="crefresh">Check my status</button>' : '<button class="gbtn green" id="cver">Demo: simulate verification</button>'}</div>`}
 <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="gbtn green" id="cin">Go inside</button><button class="gbtn blue" id="cfly">Show my building</button><button class="gbtn pink" id="cshare">Make a share card</button>${this.remote ? '' : '<button class="gbtn dark" id="cdrop">Remove claim</button>'}</div>`;
         bind('#ccopy', () => { navigator.clipboard && navigator.clipboard.writeText(c.code); this.notify('Code copied!'); });
-        bind('#cver', () => { this.verifyDemo(); G.confetti(160); this.render(); }); bind('#cdrop', () => { this.v.claim = null; this.save(); this.applyFx(); this.render(); });
-        bind('#crefresh', async () => { await this.run(() => this.sync(true)); if (this.v.claim && this.v.claim.status === 'verified') G.confetti(200); this.applyFx(); this.render(); });
+        bind('#cver', () => { this.verifyDemo(); G.confetti(160); G.sfx('claim'); G.banner('VERIFIED!', 'Your name plate has a green check', '✅'); this.render(); }); bind('#cdrop', () => { this.v.claim = null; this.save(); this.applyFx(); this.render(); });
+        bind('#crefresh', async () => { await this.run(() => this.sync(true)); if (this.v.claim && this.v.claim.status === 'verified') { G.confetti(200); G.sfx('claim'); G.banner('VERIFIED!', 'Your name plate has a green check', '✅'); } this.applyFx(); this.render(); });
         bind('#cin', () => { this.close(); this.getCtx().enter(c.building); });
         bind('#cfly', () => { this.close(); this.getCtx().fly(c.building); }); bind('#cshare', () => { this.close(); this.getCtx().share(c.building); });
       }

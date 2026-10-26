@@ -13,6 +13,7 @@ import { buildInfra, excludedFromRoads, AIRPORT, HARBOR, RIVER_X, RIVER_HALF } f
 import { InteriorSystem, canEnter, HOME_TYPES } from './interior.js';
 import { RemoteGameStore } from './gamestore.js';
 import './monitor.js';
+import * as G from './gameui.js';
 import { store } from './store.js';
 import { previewStage, statsStage, crateStage, shareStage, roofItem, labelTex } from './stages.js';
 import { Visitor } from './visitor.js';
@@ -693,6 +694,14 @@ const fadeEl = $('fade');
 const interior = new InteriorSystem({
   renderer, renderPass, canvas, envMap: scene.environment, store, getNight: () => windowF, notify: msg => toast(msg), getModel, materials,
   openPreview: sys => previewStage(sys, sys.s), capture: cb => { captureCb = cb; },
+  celebrate: (kind, text) => {
+    if (kind === 'open') { G.banner('BUSINESS OPENED!', text, '🏪'); G.confetti(170); G.sfx('claim'); }
+    else if (kind === 'upgrade') { G.banner('LEVEL UP!', text, '⬆️'); G.confetti(90); G.sfx('level'); }
+    else if (kind === 'manager') { G.banner('MANAGER HIRED', 'Your income now collects itself', '🧑‍💼'); G.confetti(90); G.sfx('level'); }
+    else if (kind === 'worker') { G.sfx('coin'); toast('New worker hired!'); }
+    else if (kind === 'collect') G.sfx('coin');
+    else if (kind === 'place') G.sfx('place');
+  },
   onExit: () => {
     fadeEl.classList.add('on');
     setTimeout(() => { renderPass.scene = scene; renderPass.camera = camera; fly = null; controls.enabled = true; $('hud').style.display = ''; $('dev').style.visibility = ''; labelEl.style.opacity = 0; fadeEl.classList.remove('on'); refreshBizFx(); }, 450);
@@ -818,7 +827,9 @@ const visitor = new Visitor({
   getCtx: () => ({ W, count, next: nextMilestone(count), enter: i => { const s = W.S[i]; if (s) enterOwn(s); }, fly: i => { const s = W.S[i]; if (s) flyTo(s.x, 10, s.z, 60, 5); }, share: i => overlayStage(() => shareStage(interior, W.S[i], visitor.v.claim, location.host + location.pathname.replace(/\/$/, ''))) }),
   showCrate: res => overlayStage(() => crateStage(interior, res, () => { const r = visitor.openOne(); if (r) crateStage(interior, r, () => {}); })),
   locateGolden: locateGoldenStar,
-  onClaimed: i => { const s = W && W.S[i]; if (!s) return; flyTo(s.x, s.model.topY + 8, s.z, 70, 6); const cols = ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b']; for (let k = 0; k < 6; k++) setTimeout(() => { if (typeof fw !== 'undefined') fw.queue.push({ t: performance.now() / 1000, x: s.x + (Math.random() - .5) * 30, y: s.model.topY + 20 + Math.random() * 14, z: s.z + (Math.random() - .5) * 30, c: cols[k % 4] }); }, 900 + k * 450); },
+  onClaimed: i => { const s = W && W.S[i]; if (!s) return; flyTo(s.x, s.model.topY + 8, s.z, 70, 6);
+    G.banner('BUILDING CLAIMED!', `#${i + 1}${visitor.v.claim && visitor.v.claim.optIn ? ' · @' + visitor.v.claim.username : ''}`, '🏠'); G.sfx('claim'); G.confetti(240);
+    shockwave(s.x, s.z, 0x44ffaa, 1); setTimeout(() => shockwave(s.x, s.z, 0xffd23a, 1.4), 350); setTimeout(() => shockwave(s.x, s.z, 0xff6bd6, 1.8), 700); const cols = ['#ff6bd6', '#6be3ff', '#ffe36b', '#8bff9b']; for (let k = 0; k < 6; k++) setTimeout(() => { if (typeof fw !== 'undefined') fw.queue.push({ t: performance.now() / 1000, x: s.x + (Math.random() - .5) * 30, y: s.model.topY + 20 + Math.random() * 14, z: s.z + (Math.random() - .5) * 30, c: cols[k % 4] }); }, 900 + k * 450); },
 });
 if (visitor.remote) { const gs = new RemoteGameStore(visitor.remote); gs.notify = toast; gs.onDesync = () => { if (interior.active && interior.s) interior.enter(interior.s); }; interior.store = gs; }
 $('devev').addEventListener('click', () => startLiveEvent());
@@ -897,7 +908,7 @@ function frame(nowMs) {
     labelEl.style.opacity = on ? 1 : 0; labelEl.style.left = (proj.x * 0.5 + 0.5) * innerWidth + 'px'; labelEl.style.top = (-proj.y * 0.5 + 0.5) * innerHeight + 'px';
   } else { beam.visible = ring.visible = false; labelEl.style.opacity = 0; }
   aviMat.color.setRGB(1, 0.07, 0.04).multiplyScalar(0.3 + 4 * Math.max(0, Math.sin(now * 3.1)));
-  updateAgents(dt, now); updateAmbient(now); updateBizFx(now); updateVisitorFx(now, now); updateLiveEvent(now); W.infra.update(now, dt); updateFireworks(dt, now);
+  updateAgents(dt, now); updateAmbient(now); updateBizFx(now); updateVisitorFx(now, now); updateLiveEvent(now); W.infra.update(now, dt); updateFireworks(dt, now); updateShocks(now);
   if ((frames & 7) === 0) updateChunks();
   composer.render();
   frames++; slowMs += dt * 1000;
@@ -907,6 +918,25 @@ function setPR(v) { pixelRatio = v; renderer.setPixelRatio(v); composer.setPixel
 function frameView() { camera.aspect = innerWidth / innerHeight; camera.setViewOffset(innerWidth, innerHeight, 0, -innerHeight * 0.1, innerWidth, innerHeight); camera.updateProjectionMatrix(); }
 frameView();
 addEventListener('resize', () => { frameView(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight); if (W) fitCamera(); });
+
+/* glowing shockwave rings and a light pillar for big moments (claiming a building) */
+const shocks = [];
+function shockwave(x, z, color = 0x44ffaa, big = 1) {
+  if (document.body.classList.contains('rm')) return;
+  const mk = o => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: o, side: THREE.DoubleSide, depthWrite: false, toneMapped: false });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 64), mk(0.9)); ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.7, z);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 110, 24, 1, true), mk(0.5)); beam.position.set(x, 55, z);
+  scene.add(ring, beam); shocks.push({ ring, beam, t0: performance.now() / 1000, big });
+}
+function updateShocks(now) {
+  for (let i = shocks.length - 1; i >= 0; i--) {
+    const s = shocks[i], k = (now - s.t0) / 1.8;
+    if (k >= 1) { scene.remove(s.ring, s.beam); s.ring.geometry.dispose(); s.beam.geometry.dispose(); s.ring.material.dispose(); s.beam.material.dispose(); shocks.splice(i, 1); continue; }
+    const e = 1 - Math.pow(1 - k, 3); s.ring.scale.setScalar(2 + e * 60 * s.big); s.ring.material.opacity = 0.9 * (1 - k); s.beam.scale.set(1 + e * 0.5, 1, 1 + e * 0.5); s.beam.material.opacity = 0.5 * (1 - k) * (1 - k);
+  }
+}
+$('snd').addEventListener('click', e => { const m = !G.isMuted(); G.setMuted(m); e.target.classList.toggle('on', !m); e.target.setAttribute('aria-pressed', !m); e.target.textContent = m ? 'Sound: off' : 'Sound: on'; if (!m) G.sfx('claim'); });
+{ const b = $('snd'); b.classList.toggle('on', !G.isMuted()); b.textContent = G.isMuted() ? 'Sound: off' : 'Sound: on'; }
 
 /* ---------- quality, accessibility, bug report, embed, studio ---------- */
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
