@@ -178,8 +178,9 @@ export class InteriorSystem {
     for (let k = 0; k < 2; k++) { const p = makePerson(SHIRTS[(s.variant + k * 3) % 8], SKINS[(s.variant + k) % 4]); p.position.set(1 + k, 0, 1.5); this.scene.add(p); this.walkers.push({ obj: p, target: null, wait: 1 + k, sit: false }); }
   }
   _vault() { // the money stack grows with net worth
-    const nw = netWorth(this.store.state), n = Math.max(1, Math.min(30, Math.floor(Math.log2(Math.max(2, nw / 40)) * 3))), g = this.vault = new THREE.Group(), gold = M('#d9b53a', 0.3, 0.9), cash = M('#6fa86a', 0.8);
-    let i = 0; for (let row = 0; i < n; row++) for (let c = 0; c < 6 - row && i < n; c++, i++) { const b = box(0.42, 0.14, 0.2, i % 3 ? cash : gold, (c - (6 - row - 1) / 2) * 0.45, row * 0.15, 0); b.rotation.y = ((i * 37) % 11 - 5) * 0.01; g.add(b); }
+    const nw = netWorth(this.store.state), n = Math.max(1, Math.min(21, Math.floor(Math.log2(Math.max(2, nw / 40)) * 3))), g = this.vault = new THREE.Group(), gold = M('#d9b53a', 0.3, 0.9), cash = M('#6fa86a', 0.8);
+    // 6 rows hold 21 stacks; the row limit keeps this loop finite
+    let i = 0; for (let row = 0; i < n && row < 6; row++) for (let c = 0; c < 6 - row && i < n; c++, i++) { const b = box(0.42, 0.14, 0.2, i % 3 ? cash : gold, (c - (6 - row - 1) / 2) * 0.45, row * 0.15, 0); b.rotation.y = ((i * 37) % 11 - 5) * 0.01; g.add(b); }
     const base = box(2.9, 0.12, 0.6, M('#3a3f46', 0.5, 0.6), 0, -0.1, 0); g.add(base); this.coinSpin = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 24), gold); this.coinSpin.rotation.x = Math.PI / 2; this.coinSpin.position.set(0, Math.ceil(n / 6) * 0.15 + 0.5, 0); g.add(this.coinSpin);
     g.position.set(this.dim.W / 2 - 1.8, 0.12, this.dim.D / 2 - 0.7); g.rotation.y = -0.4; this.scene.add(g);
   }

@@ -99,7 +99,8 @@ export class Visitor {
   _ui() {
     const css = document.createElement('style');
     css.textContent = `#vhub{position:fixed;inset:0;display:none;z-index:30;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#f4f7ff;background:radial-gradient(circle at 50% 30%,rgba(30,40,100,.55),rgba(3,6,18,.85));animation:gfadein .25s}
-#vhub .card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(580px,calc(100vw - 16px));max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:linear-gradient(#1b2557,#0e1436);border:4px solid #fff;border-radius:28px;overflow:hidden;box-shadow:0 8px 0 #060a24,0 28px 70px rgba(0,0,0,.65);animation:gpop .4s cubic-bezier(.2,1.5,.4,1)}
+#vhub .card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(580px,calc(100vw - 16px));max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:linear-gradient(#1b2557,#0e1436);border:4px solid #fff;border-radius:28px;overflow:hidden;box-shadow:0 8px 0 #060a24,0 28px 70px rgba(0,0,0,.65);animation:gpopc .4s cubic-bezier(.2,1.5,.4,1)}
+@keyframes gpopc{0%{transform:translate(-50%,-50%) scale(.6);opacity:0}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
 #vhub .head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px}#vhub h2{margin:0;font:400 22px var(--game-font);letter-spacing:.02em}
 #vhub .tabs{display:flex;gap:6px;padding:0 12px 10px;overflow-x:auto}
 #vhub .tabs button{font:400 14px var(--game-font);padding:7px 14px;border-radius:999px;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);color:#dfe6ff;cursor:pointer;white-space:nowrap}#vhub .tabs button.on{background:linear-gradient(#4b8bff,#1f4fd8);border-color:#fff;color:#fff;box-shadow:0 3px 0 #0d2a8a}

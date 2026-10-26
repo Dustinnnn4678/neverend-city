@@ -984,7 +984,8 @@ if ('serviceWorker' in navigator && location.protocol === 'https:' && !params.ha
 const loadBar = n => { const i = document.querySelector('#loadbar i'); if (i) i.style.width = n + '%'; };
 
 /* ---------- go ---------- */
-window.__city = { explore, beginExplore, renderer, composer, interior, openBuilding, store, visitor, startLiveEvent, refreshVisitorFx, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
+if (params.has('video')) { for (const id of ['dev', 'title', 'count']) { const d = $(id); if (d) d.style.display = 'none'; } }    // day-one.html drives the city for the promo video
+window.__city = { explore, beginExplore, renderer, composer, interior, openBuilding, store, visitor, startLiveEvent, refreshVisitorFx, refreshGolden, shockwave, enterOwn, fw, G, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
 (async () => {
   try {
     loadBar(30);
