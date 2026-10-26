@@ -251,6 +251,15 @@ async function s9(d) {
 
 /* ---------------- runner ---------------- */
 let running = false, rec = null, chunks = [], stopRequested = false;
+// one recorded voice track (video/vo-full.mp3) cut into scenes by video/vo-cues.json; falls back to per-scene files vo-N.mp3
+async function voiceTrack() {
+  try {
+    const cues = await fetch('video/vo-cues.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null); if (!cues) return null;
+    const a = new Audio('video/' + cues.file); a.preload = 'auto'; await new Promise(res => { a.oncanplaythrough = res; a.onerror = res; setTimeout(res, 8000); });
+    if (!isFinite(a.duration)) return null;
+    return cues.scenes.map(([s, e]) => ({ duration: e - s, play() { a.currentTime = s; a.play().catch(() => {}); const stop = () => { if (a.currentTime >= e - 0.03 || a.paused) { a.pause(); this.onended && this.onended(); } else requestAnimationFrame(stop); }; requestAnimationFrame(stop); return Promise.resolve(); }, onended: null }));
+  } catch (e) { return null; }
+}
 async function voice(i) { try { const r = await fetch(`video/vo-${i}.mp3`, { method: 'HEAD' }); if (!r.ok) return null; } catch (e) { return null; } const a = new Audio(`video/vo-${i}.mp3`); a.preload = 'auto'; await new Promise(res => { a.onloadedmetadata = res; a.onerror = res; setTimeout(res, 4000); }); return isFinite(a.duration) && a.duration > 0 ? a : null; }
 async function loadCity() {
   try { // a fresh demo save: no claim yet, today's visit already counted (no pop-ups), best graphics, sound on
@@ -265,7 +274,7 @@ async function loadCity() {
 async function play() {
   if (running) return; running = true; stopRequested = false; audioInit(); await A.resume();
   $('intro').classList.remove('out'); $('end').classList.remove('on'); $('cap').innerHTML = ''; status('Loading the city…');
-  await loadCity(); const voices = await Promise.all(SCENES.map((_, i) => voice(i + 1)));
+  await loadCity(); const voices = (await voiceTrack()) || await Promise.all(SCENES.map((_, i) => voice(i + 1)));
   status(`Playing. Voice clips found: ${voices.filter(Boolean).length} of ${SCENES.length}.`);
   $('bars').innerHTML = SCENES.map(() => '<i><b></b></i>').join('');
   musicStart(); await sleep(1300); $('intro').classList.add('out'); sfx('impact');
@@ -274,7 +283,7 @@ async function play() {
     const sc = SCENES[i], a = voices[i], words = sc.say.split(/\s+/).length, vo = a ? a.duration : words / 2.7 + .6, dur = Math.max(vo + .5, sc.min || 0);
     if (i) flash(); await sleep(i ? 260 : 0); killOverlays(); chip(sc.chip);
     const bar = $('bars').children[i].firstChild; bar.style.transition = `width ${dur}s linear`; requestAnimationFrame(() => { bar.style.width = '100%'; });
-    captions(sc.say, vo); if (a) { duck(true); a.play().catch(() => {}); a.onended = () => duck(false); }
+    captions(sc.say, vo); if (a) { duck(true); a.onended = () => duck(false); const p = a.play(); if (p && p.catch) p.catch(() => {}); }
     await Promise.all([sleep(dur * 1000), sc.run(vo).catch(e => console.warn('scene', i + 1, e))]);
   }
   clearInterval(killer); await sleep(1200); musicStop(1.5); await sleep(1700); running = false; status('Done.');

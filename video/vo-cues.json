@@ -1,0 +1,6 @@
+{
+  "file": "vo-full.mp3",
+  "voice": "vidIQ voiceover, 'Chris - Charming, Down-to-Earth'",
+  "note": "Start and end second of each scene's line inside vo-full.mp3 (found with speech recognition; accurate to about 0.2 s).",
+  "scenes": [[0.0, 12.45], [12.45, 32.45], [32.45, 46.6], [46.6, 56.45], [56.45, 67.45], [67.45, 78.95], [78.95, 90.6], [90.6, 97.0], [97.0, 108.64]]
+}
