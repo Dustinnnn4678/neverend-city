@@ -1,0 +1,6 @@
+{
+  "file": "hook-full.mp3",
+  "voice": "vidIQ voiceover, 'Chris - Charming, Down-to-Earth'",
+  "note": "Start and end second of each scene's line inside hook-full.mp3 (speech recognition + silence detection).",
+  "scenes": [[0.0, 9.7], [9.7, 20.25], [20.25, 26.05], [26.05, 33.55], [33.55, 40.83]]
+}

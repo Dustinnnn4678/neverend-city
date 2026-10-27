@@ -55,6 +55,15 @@
   #end .sub { font: 600 2.2cqh system-ui, sans-serif; opacity: .9; padding: 0 8cqw; } @keyframes pulse { 50% { transform: scale(1.08); } }
   #end > * { opacity: 0; transform: translateY(3cqh) scale(.8); transition: transform .6s cubic-bezier(.2,1.7,.35,1), opacity .3s; } #end.on > * { opacity: 1; transform: none; }
   #end.on > :nth-child(2) { transition-delay: .25s; } #end.on > :nth-child(3) { transition-delay: .5s; } #end.on > :nth-child(4) { transition-delay: .75s; }
+  /* big "+1" pop and secret-milestone locks (hook cut) */
+  #plus { position: absolute; left: 0; right: 0; top: 30cqh; text-align: center; z-index: 6; font: 400 13cqh/1 var(--font); -webkit-text-stroke: .8cqh #0a0e22; paint-order: stroke fill; opacity: 0; transform: scale(.3) rotate(-8deg); }
+  #plus small { display: block; font-size: 3cqh; letter-spacing: .14em; -webkit-text-stroke: .4cqh #0a0e22; }
+  #plus.go { animation: plus 1.5s cubic-bezier(.2,1.6,.35,1) forwards; } @keyframes plus { 0% { opacity: 0; transform: scale(.3) rotate(-8deg); } 18% { opacity: 1; transform: scale(1.15) rotate(3deg); } 30% { transform: scale(1) rotate(0); } 80% { opacity: 1; transform: translateY(-2cqh); } 100% { opacity: 0; transform: translateY(-8cqh) scale(.9); } }
+  #locks { position: absolute; left: 10cqw; right: 10cqw; top: 33cqh; z-index: 6; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6cqh; }
+  #locks div { aspect-ratio: 3 / 4; border-radius: 2.2cqh; display: grid; place-items: center; align-content: center; gap: .6cqh; background: linear-gradient(#1d2450, #0b1030); border: .35cqh solid rgba(255,255,255,.85); box-shadow: 0 0 4cqh rgba(255,200,80,.35); font: 400 5cqh var(--font); opacity: 0; transform: translateY(5cqh) scale(.5) rotate(-6deg); transition: transform .6s cubic-bezier(.2,1.7,.35,1), opacity .3s; }
+  #locks div small { font-size: 2cqh; letter-spacing: .12em; color: #ffe066; } #locks div.on { opacity: 1; transform: none; } #locks.shake div { animation: lshake .35s 3; }
+  @keyframes lshake { 25% { transform: rotate(-5deg) scale(1.05); } 75% { transform: rotate(5deg) scale(1.05); } }
+  #locktitle { position: absolute; left: 0; right: 0; top: 22cqh; text-align: center; z-index: 6; font: 400 5.4cqh var(--font); color: #ffe066; -webkit-text-stroke: .5cqh #3a2400; paint-order: stroke fill; opacity: 0; transform: scale(.6); transition: .5s cubic-bezier(.2,1.7,.35,1); } #locktitle.on { opacity: 1; transform: none; }
   /* intro title */
   #intro { position: absolute; inset: 0; z-index: 9; display: grid; place-items: center; background: #05070f; font: 400 13cqh var(--font); color: #fff; transition: opacity .7s; }
   #intro span { display: inline-block; animation: introIn 1.1s cubic-bezier(.2,1.6,.35,1) both; } #intro span:nth-child(2) { animation-delay: .18s; color: #ffe066; }
@@ -80,6 +89,9 @@
       <div id="bars"></div>
       <div id="chip"></div>
       <div id="count"></div>
+      <div id="plus"></div>
+      <div id="locktitle">SECRET MILESTONES</div>
+      <div id="locks"><div>🔒<small>???</small></div><div>🔒<small>???</small></div><div>🔒<small>???</small></div></div>
       <div id="cards"></div>
       <div id="comment"><div class="av"></div><div><div class="who">you · just now</div><div class="txt"></div></div><div class="ok">✅</div></div>
       <div id="cap"></div>
@@ -107,6 +119,16 @@ const SCENES = [
   { chip: 'PLAY TOGETHER', say: "Follow your friends, race them up the leaderboards, and build giant projects together... as a city.", run: s8, min: 7 },
   { chip: 'LINK IN BIO', say: "So... this is day one. The link's in my bio. Go claim your building, and drop your code in the comments so I can verify you. Oh, and tell me which building you picked! Let's see how big we can make this thing.", run: s9, min: 10 },
 ];
+
+// second, shorter cut (day-one.html?cut=hook): hook first, milestones kept secret
+const HOOK = [
+  { chip: 'BUILT BY YOU', say: "This city... is built by you. Literally. Every time you follow me, or subscribe... a brand new building goes up. Live.", run: h1, min: 8 },
+  { chip: 'DAY 1', say: "Today is day one, and it's tiny. But hidden inside this city are secret milestones. Hit one... and something massive unlocks. And no, I'm not telling you what.", run: h2, min: 11 },
+  { chip: 'CLAIM IT', say: "And you're not just watching. Claim any building, put your name on it, and it's yours.", run: h3, min: 9 },
+  { chip: 'PLAY', say: "Then it turns into a game. Daily quests. Hidden golden stars. Mystery crates. Your own home. Even your own business.", run: h4, min: 17 },
+  { chip: 'LINK IN BIO', say: "So follow and subscribe to grow the city, and hit the link in my bio to claim your building. Let's see what we unlock.", run: h5, min: 9 },
+];
+const CUT = new URLSearchParams(location.search).get('cut') === 'hook' ? 'hook' : 'day1', PLAN = CUT === 'hook' ? HOOK : SCENES;
 
 /* ---------------- sound: music bed + effects (all synthesized) ---------------- */
 let A = null, master, musicBus, sfxBus, musicTimer = null;
@@ -249,12 +271,52 @@ async function s9(d) {
   const s = claimed; if (s) setTimeout(() => C().shockwave(s.x, s.z, 0xffd23a, 2), 600);
 }
 
+/* ---------------- hook cut scenes ---------------- */
+function plus(text, label, color) { const p = $('plus'); p.innerHTML = `${text}<small>${label}</small>`; p.style.color = color; p.classList.remove('go'); void p.offsetWidth; p.classList.add('go'); }
+async function popBuilding(n, color, hex, text, label) { setCount(n); sfx('impact'); plus(text, label, color); await sleep(450); const s = S()[S().length - 1]; if (s) { C().shockwave(s.x, s.z, hex, .6); fly(s.x, 6, s.z, 48, 99); sfx('sparkle'); } }
+async function h1(d) {
+  C().setTime(17.3); C().controls.autoRotate = false; const s0 = S()[S().length - 1]; fly(s0.x, 6, s0.z, 60, 99);
+  await sleep(d * 330); await popBuilding(20, '#ff6bd6', 0xff6bd6, '+1', 'NEW FOLLOWER');
+  await sleep(d * 230); await popBuilding(21, '#ff5b5b', 0xff4040, '+1', 'NEW SUBSCRIBER');
+  await sleep(d * 150); C().controls.autoRotate = true; C().controls.autoRotateSpeed = 1.1;
+}
+async function h2(d) {
+  fly(0, 10, 0, 170, 99); C().controls.autoRotateSpeed = 0.5; await sleep(d * 330);
+  sfx('riser'); frame.style.filter = 'blur(5px) brightness(.55)'; $('locktitle').classList.add('on');
+  [...$('locks').children].forEach((c, i) => setTimeout(() => { c.classList.add('on'); sfx('pop'); }, 250 + i * 280));
+  await sleep(d * 330); sfx('impact'); flash(); $('locks').classList.add('shake'); setTimeout(() => $('locks').classList.remove('shake'), 1100);
+  await sleep(d * 300); [...$('locks').children].forEach(c => c.classList.remove('on')); $('locktitle').classList.remove('on'); frame.style.filter = '';
+}
+async function h3(d) {
+  const s = nearHouse(); claimed = s; C().controls.autoRotate = false; fly(s.x, 10, s.z, 100, 99);
+  await sleep(500); V().pending = s; V().platform = 'instagram'; V().open('building'); await sleep(700);
+  const u = D().querySelector('#cuser'); if (u) { tapAt(u); for (const ch of '@yourname') { u.value += ch; sfx('type'); await sleep(45); } }
+  const age = D().querySelector('#cage'); if (age) { tapAt(age); age.checked = true; } await sleep(450); await tap('#csub'); await sleep(300); V().close();
+}
+async function h4(d) {
+  V().open('quests'); await sleep(1500); V().close(); await sleep(200);
+  const list = V().goldenToday(S().length), g = list.find(i => !V().isFound(i));
+  if (g !== undefined) { V().locateGolden(g); await sleep(2300); const gs = S()[g]; await V().findGolden(g); if (gs) C().fw.queue.push({ t: performance.now() / 1000, x: gs.x, y: gs.model.topY + 12, z: gs.z, c: '#ffd23a' }); C().refreshGolden(); sfx('sparkle'); await sleep(700); }
+  V().v.crates = 1; V().save(); V().refreshBadge(); V().open('crates'); await sleep(700); await tap('#copen'); await sleep(3000); if (C().interior.active) C().interior.exit(); await sleep(700);
+  const st = C().store.state; st.coins = 250000; C().store.save();
+  const home = claimed || nearHouse(); C().openBuilding(home); await sleep(3000); const it = C().interior;
+  if (it.active) { it._refreshCoins(); for (const [id, x, z] of [['sofa', 0.2, 2.4], ['tv', 0.2, -0.9], ['plant', 3.9, 2.9]]) { it.startPlace(id); const gh = it.ghost; if (!gh) continue; gh.item.x = x; gh.item.z = z; gh.obj.visible = true; it._updateGhost(); if (gh.valid) it._click({ clientX: 1, clientY: 1 }); else it._cancelGhost(); await sleep(450); } }
+  await sleep(500); flash(); it.exit(); await sleep(800);
+  const shop = nearHouse('shop') || nearHouse('store'); C().openBuilding(shop); await sleep(3000);
+  if (it.active) { it._refreshCoins(); await tap('[data-open="lemonade"]', it.panel); await sleep(1300); await tap('#iup', it.panel); await sleep(900); await tap('#imgr', it.panel); await sleep(900); }
+}
+async function h5(d) {
+  if (C().interior.active) C().interior.exit(); await sleep(700); C().setTime(20.5); C().controls.autoRotate = true; C().controls.autoRotateSpeed = 0.7; fly(0, 10, 0, 160, 99);
+  const e = $('end'); e.querySelector('.day').textContent = 'DAY 1'; e.querySelector('.h').textContent = 'FOLLOW + SUBSCRIBE = A BIGGER CITY'; e.querySelector('.bio').textContent = 'CLAIM YOURS · LINK IN BIO ↑'; e.querySelector('.sub').textContent = 'Secret milestones are coming… 🔒';
+  await sleep(500); e.classList.add('on'); sfx('impact'); C().G.confetti(240); if (claimed) setTimeout(() => C().shockwave(claimed.x, claimed.z, 0xffd23a, 1.4), 600);
+}
+
 /* ---------------- runner ---------------- */
 let running = false, rec = null, chunks = [], stopRequested = false;
 // one recorded voice track (video/vo-full.mp3) cut into scenes by video/vo-cues.json; falls back to per-scene files vo-N.mp3
 async function voiceTrack() {
   try {
-    const cues = await fetch('video/vo-cues.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null); if (!cues) return null;
+    const cues = await fetch(`video/${CUT === 'hook' ? 'hook' : 'vo'}-cues.json`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null); if (!cues) return null;
     const a = new Audio('video/' + cues.file); a.preload = 'auto'; await new Promise(res => { a.oncanplaythrough = res; a.onerror = res; setTimeout(res, 8000); });
     if (!isFinite(a.duration)) return null;
     return cues.scenes.map(([s, e]) => ({ duration: e - s, play() { a.currentTime = s; a.play().catch(() => {}); const stop = () => { if (a.currentTime >= e - 0.03 || a.paused) { a.pause(); this.onended && this.onended(); } else requestAnimationFrame(stop); }; requestAnimationFrame(stop); return Promise.resolve(); }, onended: null }));
@@ -274,13 +336,14 @@ async function loadCity() {
 async function play() {
   if (running) return; running = true; stopRequested = false; audioInit(); await A.resume();
   $('intro').classList.remove('out'); $('end').classList.remove('on'); $('cap').innerHTML = ''; status('Loading the city…');
-  await loadCity(); const voices = (await voiceTrack()) || await Promise.all(SCENES.map((_, i) => voice(i + 1)));
-  status(`Playing. Voice clips found: ${voices.filter(Boolean).length} of ${SCENES.length}.`);
-  $('bars').innerHTML = SCENES.map(() => '<i><b></b></i>').join('');
-  musicStart(); await sleep(1300); $('intro').classList.add('out'); sfx('impact');
+  if (CUT === 'hook') $('intro').style.display = 'none';      // the hook cut opens straight on the city
+  await loadCity(); const voices = (await voiceTrack()) || await Promise.all(PLAN.map((_, i) => voice(i + 1)));
+  status(`Playing. Voice clips found: ${voices.filter(Boolean).length} of ${PLAN.length}.`);
+  $('bars').innerHTML = PLAN.map(() => '<i><b></b></i>').join('');
+  musicStart(); await sleep(CUT === 'hook' ? 100 : 1300); $('intro').classList.add('out'); sfx('impact');
   const killer = setInterval(() => { try { killOverlays(); const hub = D().getElementById('vhub'); $('cap').classList.toggle('low', (hub && hub.style.display === 'block') || C().interior.active || $('end').classList.contains('on')); } catch (e) { /* frame busy */ } }, 200);   // no pop-ups covering the shot; captions dodge open panels
-  for (let i = 0; i < SCENES.length && !stopRequested; i++) {
-    const sc = SCENES[i], a = voices[i], words = sc.say.split(/\s+/).length, vo = a ? a.duration : words / 2.7 + .6, dur = Math.max(vo + .5, sc.min || 0);
+  for (let i = 0; i < PLAN.length && !stopRequested; i++) {
+    const sc = PLAN[i], a = voices[i], words = sc.say.split(/\s+/).length, vo = a ? a.duration : words / 2.7 + .6, dur = Math.max(vo + .5, sc.min || 0);
     if (i) flash(); await sleep(i ? 260 : 0); killOverlays(); chip(sc.chip);
     const bar = $('bars').children[i].firstChild; bar.style.transition = `width ${dur}s linear`; requestAnimationFrame(() => { bar.style.width = '100%'; });
     captions(sc.say, vo); if (a) { duck(true); a.onended = () => duck(false); const p = a.play(); if (p && p.catch) p.catch(() => {}); }
@@ -299,7 +362,7 @@ async function record() {
   const mime = ['video/mp4;codecs=avc1.640034,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
   rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 24e6, audioBitsPerSecond: 256000 }); chunks = [];
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
-  rec.onstop = () => { stream.getTracks().forEach(t => t.stop()); const ext = mime.includes('mp4') ? 'mp4' : 'webm', a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type: mime.split(';')[0] })); a.download = `neverend-day-one.${ext}`; a.click(); $('ui').style.display = ''; status(`Saved neverend-day-one.${ext} to your Downloads.`); rec = null; };
+  rec.onstop = () => { stream.getTracks().forEach(t => t.stop()); const ext = mime.includes('mp4') ? 'mp4' : 'webm', a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type: mime.split(';')[0] })); a.download = `neverend-${CUT === 'hook' ? 'hook' : 'day-one'}.${ext}`; a.click(); $('ui').style.display = ''; status(`Saved neverend-${CUT === 'hook' ? 'hook' : 'day-one'}.${ext} to your Downloads.`); rec = null; };
   rec.start(1000); await play(); if (rec) rec.stop();
 }
 $('bprev').onclick = () => play();

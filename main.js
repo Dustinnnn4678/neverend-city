@@ -984,7 +984,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:' && !params.ha
 const loadBar = n => { const i = document.querySelector('#loadbar i'); if (i) i.style.width = n + '%'; };
 
 /* ---------- go ---------- */
-if (params.has('video')) { for (const id of ['dev', 'title', 'count']) { const d = $(id); if (d) d.style.display = 'none'; } }    // day-one.html drives the city for the promo video
+if (params.has('video')) { for (const id of ['dev', 'title', 'count', 'prog']) { const d = $(id); if (d) d.style.display = 'none'; } document.querySelectorAll('.demo').forEach(d => { d.style.display = 'none'; }); }   // no "next unlock" spoilers or demo notes in videos    // day-one.html drives the city for the promo video
 window.__city = { explore, beginExplore, renderer, composer, interior, openBuilding, store, visitor, startLiveEvent, refreshVisitorFx, refreshGolden, shockwave, enterOwn, fw, G, fns: { updateAgents, updateAmbient, updateFireworks, applyTime, updateChunks, updateHud, updateFly }, setCount, get world() { return W; }, scene, camera, controls, setTime: t => { mode = 'manual'; tDay = tTarget = t; }, flyTo };
 (async () => {
   try {
